@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launcher: classv is plain javac output, so there is no jar and no manifest.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec java -cp "$here/build" classv.Main "$@"
