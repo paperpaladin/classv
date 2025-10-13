@@ -16,7 +16,7 @@ code main ([Ljava/lang/String;)V
 ```
 
 ```
-usage: classv [--info] [--pool] [--disasm] [--verify] [--all] FILE.class...
+usage: classv [--info] [--pool] [--disasm] [--smt] [--verify] [--all] FILE.class...
               @LISTFILE   one path per line
 ```
 
@@ -53,12 +53,14 @@ diffing them would measure formatting.
 | `max_stack`, `max_locals` per method | `stack=, locals=` | `--disasm` |
 | every instruction as (pc, mnemonic, canonical operands) | `-c` | `--disasm` |
 | every exception table row | `Exception table:` | `--disasm` |
+| every stack map frame: frame type, offset delta, locals, stack | `StackMapTable:` | `--smt` |
 
 Measured over `java.base` from this machine's JDK 21 module image:
 
 ```
 --- javap comparison: 7574 classes, 453680 pool operands, 604799 Utf8,
-    94072 members, 62791 code bodies, 1874309 instructions, 10975 handlers
+    94072 members, 62791 code bodies, 1874309 instructions, 10975 handlers,
+    104155 stack map frames, 125930 verification types, 104155 frame offsets
 30296 passed, 0 failed
 ```
 
@@ -80,6 +82,15 @@ in `t/javap_cmp.py` with the reason beside them.
   thousands of them inside ordinary string constants, so the oracle folds
   every unpaired surrogate to `?` and so do we. The code units themselves are
   therefore unchecked.
+- **A stack map frame's offset delta is not always printed.** For frame
+  types 0..63 and 64..127 the delta is the frame type byte itself and javap
+  prints only the byte, so a reader that forgot to subtract 64 from a
+  `same_locals_1_stack_item` frame agrees with javap about every frame in the
+  JDK. That mutation survived until the suite also asserted that every
+  expanded absolute offset lands on an instruction boundary and strictly
+  increases; the boundaries come from the instruction list javap has just
+  agreed with, so it is a property check standing on an oracle rather than a
+  second oracle. With it, the mutant fails 82 of 300 classes.
 - **Escapes are ambiguous in one direction.** javap escapes `\t \n \r \b \f '
   " \` and anything `Character.isISOControl` accepts; a string that literally
   contained the two characters `\` and `t` renders identically.
@@ -95,9 +106,8 @@ Everything after the parse. The type checker is the next milestone and
 distinct status: "classv has not looked at this" and "the JVM would reject
 this" must never be counted as the same answer.
 
-Also not done, and listed in PLAN.md: the StackMapTable is read as opaque
-bytes, the `Exceptions`, `BootstrapMethods`, `Record` and annotation
-attributes are not decoded at all, and there is no truncation or corruption
+Also not done, and listed in PLAN.md: the `Exceptions`, `BootstrapMethods`,
+`Record` and annotation attributes are not decoded at all, and there is no truncation or corruption
 sweep yet, so "the parser never throws anything but ClassFormatException" is
 currently an intention rather than a measurement.
 

@@ -114,7 +114,10 @@ Ranked by how little of them we control:
 
 ### Milestone 1: the type checker
 
-- [ ] The verification type lattice and `isAssignable`, JVMS 4.10.1.2
+- [x] The verification type representation, JVMS 4.10.1.2
+      why: the stack map table holds verification types, so the type has to
+      exist before the table can be read. isAssignable is the next item.
+- [ ] `isAssignable` and the lattice, JVMS 4.10.1.2
       why: every instruction rule is phrased in terms of it, and the
       interface rule (any reference is assignable to any interface type) is
       the one everybody gets wrong by being too strict.
@@ -123,10 +126,19 @@ Ranked by how little of them we control:
       classes, so it needs an answer from somewhere; the corpus's own files
       plus reflection is the honest source, and where neither can answer the
       result must be a refusal, not a guess.
-- [ ] StackMapTable parsing, all six frame kinds, and `--frames`
+- [x] StackMapTable parsing, all six frame kinds, and `--smt`
       why: the split verifier reads the frames rather than inferring them,
       so an off-by-one in the offset delta is an off-by-one in the whole
       algorithm. Compared against javap's own StackMapTable dump.
+      done: 104155 frames and 125930 verification types over java.base,
+      0 disagreements. Six mutations of the frame reader, five caught by
+      the frame comparison; the sixth (the 64 bias on a
+      same_locals_1_stack_item delta) survived it, because javap prints
+      only the frame type byte for those, and is caught by the new
+      assertion that every expanded offset lands on an instruction
+      boundary. One mutation of the expansion is provably equivalent
+      (dropping the first-frame special case, since prev starts at -1)
+      and is recorded as a survivor.
 - [ ] The instruction transition table, JVMS 4.10.1.9
       why: this is the body of the algorithm. Roughly 200 rules.
 - [ ] Frame merging at branch targets and the exception handler rule

@@ -23,22 +23,23 @@ public final class Main {
             EXIT_REFUSE = 3, EXIT_FORMAT = 4;
 
     private static final String USAGE =
-            "usage: classv [--info] [--pool] [--disasm] [--verify] [--all] FILE.class";
+            "usage: classv [--info] [--pool] [--disasm] [--smt] [--verify] [--all] FILE.class";
 
     public static void main(String[] args) {
         System.exit(run(args, System.out, System.err));
     }
 
     static int run(String[] args, PrintStream out, PrintStream err) {
-        boolean info = false, pool = false, disasm = false, verify = false;
+        boolean info = false, pool = false, disasm = false, verify = false, smt = false;
         java.util.List<String> files = new java.util.ArrayList<>();
         for (String a : args) {
             switch (a) {
                 case "--info": info = true; break;
                 case "--pool": pool = true; break;
                 case "--disasm": disasm = true; break;
+                case "--smt": smt = true; break;
                 case "--verify": verify = true; break;
-                case "--all": info = pool = disasm = verify = true; break;
+                case "--all": info = pool = disasm = smt = verify = true; break;
                 case "-h": case "--help": out.println(USAGE); return EXIT_OK;
                 default:
                     if (a.startsWith("-")) { err.println(USAGE); return EXIT_USAGE; }
@@ -58,7 +59,7 @@ public final class Main {
             }
         }
         if (files.isEmpty()) { err.println(USAGE); return EXIT_USAGE; }
-        if (!info && !pool && !disasm && !verify) verify = true;
+        if (!info && !pool && !disasm && !smt && !verify) verify = true;
 
         // More than one file in one JVM: starting a JVM per class costs more
         // than reading the class, and the corpus is tens of thousands of them.
@@ -67,15 +68,15 @@ public final class Main {
         int worst = EXIT_OK;
         for (String f : files) {
             if (files.size() > 1) out.println("== " + f);
-            int st = one(f, info, pool, disasm, verify, out, err);
+            int st = one(f, info, pool, disasm, smt, verify, out, err);
             if (st == EXIT_USAGE) return EXIT_USAGE;
             if (st > worst) worst = st;
         }
         return files.size() > 1 ? EXIT_OK : worst;
     }
 
-    static int one(String file, boolean info, boolean pool, boolean disasm, boolean verify,
-                   PrintStream out, PrintStream err) {
+    static int one(String file, boolean info, boolean pool, boolean disasm, boolean smt,
+                   boolean verify, PrintStream out, PrintStream err) {
 
         byte[] data;
         try {
@@ -96,7 +97,7 @@ public final class Main {
         try {
             if (info) printInfo(cf, out);
             if (pool) printPool(cf, out);
-            if (disasm) printDisasm(cf, out);
+            if (disasm || smt) printDisasm(cf, out, disasm, smt);
         } catch (ClassFormatException e) {
             out.println("FORMAT " + file + ": " + e.getMessage());
             return EXIT_FORMAT;
@@ -159,18 +160,41 @@ public final class Main {
         return b.toString();
     }
 
-    private static void printDisasm(ClassFile cf, PrintStream out) throws ClassFormatException {
+    private static void printDisasm(ClassFile cf, PrintStream out, boolean disasm, boolean smt)
+            throws ClassFormatException {
         for (ClassFile.Member m : cf.methods) {
             out.println("code " + m.name + " " + m.desc);
             if (m.code == null) { out.println("  nocode"); continue; }
-            out.println("  max_stack " + m.code.maxStack
-                    + " max_locals " + m.code.maxLocals
-                    + " code_length " + m.code.code.length);
-            List<Op.Insn> insns = Op.decode(m.code.code);
-            for (Op.Insn in : insns) out.println("  " + Op.text(in));
-            for (ClassFile.Handler h : m.code.handlers)
-                out.println("  handler " + h.start + " " + h.end + " " + h.handler
-                        + " " + (h.catchType == 0 ? "any" : cf.pool.className(h.catchType)));
+            if (disasm) {
+                out.println("  max_stack " + m.code.maxStack
+                        + " max_locals " + m.code.maxLocals
+                        + " code_length " + m.code.code.length);
+                List<Op.Insn> insns = Op.decode(m.code.code);
+                for (Op.Insn in : insns) out.println("  " + Op.text(in));
+                for (ClassFile.Handler h : m.code.handlers)
+                    out.println("  handler " + h.start + " " + h.end + " " + h.handler
+                            + " " + (h.catchType == 0 ? "any" : cf.pool.className(h.catchType)));
+            }
+            if (smt) {
+                ClassFile.Attr a = m.code.attr("StackMapTable");
+                if (a == null) continue;
+                StackMap sm = StackMap.parse(a.data, cf.pool);
+                out.println("  smt " + sm.entries.size());
+                for (StackMap.Entry e : sm.entries) {
+                    out.println("  frame " + e.frameType + " " + e.kindName()
+                            + " at " + e.offset);
+                    if (e.hasDelta) out.println("    delta " + e.delta);
+                    if (e.locals != null) out.println("    locals " + typeList(e.locals));
+                    if (e.stack != null) out.println("    stack " + typeList(e.stack));
+                }
+            }
         }
+    }
+
+    private static String typeList(VType[] ts) {
+        StringBuilder b = new StringBuilder();
+        b.append(ts.length);
+        for (int i = 0; i < ts.length; i++) b.append(i == 0 ? " " : "|").append(ts[i]);
+        return b.toString();
     }
 }

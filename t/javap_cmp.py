@@ -125,6 +125,21 @@ def canon_operand(mnem, rest):
     return '%s %s' % (mnem, rest)
 
 
+def smt_types(body):
+    """javap's "[ class \"[B\", int ]" -> ['class [B', 'int'].  The quotes are
+    javap's own: it quotes a class name that is not a plain slash separated
+    identifier path, which in practice means every array type."""
+    out = []
+    for t in body.split(','):
+        t = t.strip()
+        if not t:
+            continue
+        if t.startswith('class "') and t.endswith('"'):
+            t = 'class ' + t[7:-1]
+        out.append(t)
+    return out
+
+
 def parse_javap(text):
     """-> list of dicts, one per class file in the output."""
     classes = []
@@ -188,6 +203,35 @@ def parse_javap(text):
             state = 'tail'
             i += 1
             continue
+        m = re.match(r'^\s+StackMapTable: number_of_entries = (\d+)\s*$', ln)
+        if m and member is not None and member['code'] is not None:
+            smt = {'n': int(m.group(1)), 'frames': []}
+            member['code']['smt'] = smt
+            cur_frame = None
+            i += 1
+            while i < n:
+                l2 = lines[i]
+                mm = re.match(r'^\s+frame_type = (\d+) /\* \S+ \*/\s*$', l2)
+                if mm:
+                    cur_frame = {'ft': int(mm.group(1)), 'delta': None,
+                                 'locals': None, 'stack': None}
+                    smt['frames'].append(cur_frame)
+                    i += 1
+                    continue
+                if cur_frame is None:
+                    break
+                mm = re.match(r'^\s+offset_delta = (\d+)\s*$', l2)
+                if mm:
+                    cur_frame['delta'] = int(mm.group(1))
+                    i += 1
+                    continue
+                mm = re.match(r'^\s+(locals|stack) = \[(.*)\]\s*$', l2)
+                if mm:
+                    cur_frame[mm.group(1)] = smt_types(mm.group(2))
+                    i += 1
+                    continue
+                break
+            continue
         m = re.match(r'^\s+descriptor: (.*)$', ln)
         if m:
             member = {'desc': m.group(1).strip(), 'code': None}
@@ -197,7 +241,8 @@ def parse_javap(text):
             i += 1
             continue
         if re.match(r'^\s+Code:\s*$', ln) and member is not None:
-            code = {'insns': [], 'handlers': [], 'stack': None, 'locals': None}
+            code = {'insns': [], 'handlers': [], 'stack': None, 'locals': None,
+                    'smt': None}
             member['code'] = code
             i += 1
             m = re.match(r'^\s+stack=(\d+), locals=(\d+)', lines[i]) if i < n else None
@@ -281,10 +326,23 @@ def parse_classv(text):
             pass
         elif ln.startswith('  max_stack '):
             p = ln.split()
-            member['code'] = {'insns': [], 'handlers': [],
+            member['code'] = {'insns': [], 'handlers': [], 'smt': None,
                               'stack': int(p[1]), 'locals': int(p[3])}
         elif ln.startswith('  handler '):
             member['code']['handlers'].append(ln[len('  handler '):])
+        elif ln.startswith('  smt '):
+            member['code']['smt'] = {'n': int(ln.split()[1]), 'frames': [], 'offsets': []}
+        elif ln.startswith('  frame '):
+            member['code']['smt']['frames'].append(
+                {'ft': int(ln.split()[1]), 'delta': None, 'locals': None, 'stack': None})
+            member['code']['smt']['offsets'].append(int(ln.split()[4]))
+        elif ln.startswith('    delta '):
+            member['code']['smt']['frames'][-1]['delta'] = int(ln.split()[1])
+        elif ln.startswith('    locals ') or ln.startswith('    stack '):
+            key, rest = ln.strip().split(' ', 1)
+            cnt, _, payload = rest.partition(' ')
+            member['code']['smt']['frames'][-1][key] = (
+                payload.split('|') if int(cnt) else [])
         elif ln.startswith('  ') and member is not None and member['code'] is not None:
             member['code']['insns'].append(ln[2:])
         elif ln.startswith('#'):
@@ -368,6 +426,49 @@ def cmp_class(jc, cc, counters):
         if a['code'] is None:
             continue
         counters['method_code'] += 1
+        js, cs = a['code']['smt'], b['code']['smt']
+        if (js is None) != (cs is None):
+            bad += 1
+            if bad == 1:
+                fail('%s %s: StackMapTable presence %s vs javap %s'
+                     % (path, a['desc'], cs is not None, js is not None))
+        elif js is not None:
+            counters['frame'] += len(cs['frames'])
+            if js['n'] != cs['n'] or len(js['frames']) != len(cs['frames']):
+                bad += 1
+                if bad == 1:
+                    fail('%s %s: %d frames (header %d) vs javap %d (header %d)'
+                         % (path, a['desc'], len(cs['frames']), cs['n'],
+                            len(js['frames']), js['n']))
+            else:
+                for jf, cfr in zip(js['frames'], cs['frames']):
+                    counters['frame_type'] += 1
+                    for t in jf['locals'] or []:
+                        counters['vtype'] += 1
+                    for t in jf['stack'] or []:
+                        counters['vtype'] += 1
+                    if jf != cfr:
+                        bad += 1
+                        if bad == 1:
+                            fail('%s %s: frame %r vs javap %r' % (path, a['desc'], cfr, jf))
+                        break
+            # javap prints the deltas and not the absolute offsets, so nothing
+            # above can see an error in the expansion.  The absolute offsets
+            # must land on an instruction boundary and strictly increase; the
+            # boundaries come from the instruction list javap has just agreed
+            # with, so this is a property check standing on an oracle rather
+            # than a second oracle.
+            pcs = set(int(x.split(' ', 1)[0]) for x in b['code']['insns'])
+            last = -1
+            for off in cs['offsets']:
+                counters['frame_offset'] += 1
+                if off not in pcs or off <= last:
+                    bad += 1
+                    if bad == 1:
+                        fail('%s %s: stack map frame offset %d is not an increasing '
+                             'instruction boundary' % (path, a['desc'], off))
+                    break
+                last = off
         if (a['code']['stack'], a['code']['locals']) != (b['code']['stack'], b['code']['locals']):
             bad += 1
             if bad == 1:
@@ -404,7 +505,8 @@ def main():
     paths = [p for p in open(listfile).read().split('\n') if p]
     counters = {'version': 0, 'pool': 0, 'utf8': 0, 'member': 0,
                 'method_code': 0, 'insn': 0, 'handler': 0, 'classes': 0,
-                'javap_failed': 0}
+                'javap_failed': 0, 'frame': 0, 'frame_type': 0, 'vtype': 0,
+                'frame_offset': 0}
     tmp = listfile + '.batch'
     for start in range(0, len(paths), batch):
         chunk = paths[start:start + batch]
@@ -412,7 +514,7 @@ def main():
             f.write('\n'.join(chunk) + '\n')
         jr = subprocess.run(['javap', '-v', '-p', '-c'] + chunk,
                             capture_output=True, text=True, errors='replace')
-        cr = subprocess.run(classv_cmd + ['--info', '--pool', '--disasm', '@' + tmp],
+        cr = subprocess.run(classv_cmd + ['--info', '--pool', '--disasm', '--smt', '@' + tmp],
                             capture_output=True, text=True, errors='replace')
         if cr.returncode != 0:
             fail('classv exited %d on batch starting %s: %s' %
@@ -433,17 +535,20 @@ def main():
     for f in FAILURES[:20]:
         print('FAIL %s' % f)
     print('--- javap comparison: %d classes, %d pool operands, %d Utf8, %d members, '
-          '%d code bodies, %d instructions, %d handlers'
+          '%d code bodies, %d instructions, %d handlers, %d stack map frames, '
+          '%d verification types, %d frame offsets'
           % (counters['classes'], counters['pool'], counters['utf8'], counters['member'],
-             counters['method_code'], counters['insn'], counters['handler']))
+             counters['method_code'], counters['insn'], counters['handler'],
+             counters['frame'], counters['vtype'], counters['frame_offset']))
     if counters['javap_failed']:
         print('--- javap produced no output for %d files' % counters['javap_failed'])
     print('JAVAP_PASS %d' % PASS)
     print('JAVAP_FAIL %d' % FAIL)
     # A comparison over zero classes agrees with everything.
-    if counters['classes'] == 0 or counters['insn'] == 0:
-        print('FAIL javap comparison was vacuous: %d classes, %d instructions'
-              % (counters['classes'], counters['insn']))
+    if counters['classes'] == 0 or counters['insn'] == 0 or counters['vtype'] == 0:
+        print('FAIL javap comparison was vacuous: %d classes, %d instructions, '
+              '%d verification types'
+              % (counters['classes'], counters['insn'], counters['vtype']))
         sys.exit(1)
     sys.exit(1 if FAIL else 0)
 
