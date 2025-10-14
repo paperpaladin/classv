@@ -37,8 +37,70 @@ invisible from the language.
 
 Ranked by how little of them this repository controls.
 
-**The JVM itself.** Not written yet; see PLAN.md. The verifier is the next
-milestone and the agreement number is the headline.
+**The JVM itself**, through `t/Probe.java`. This is the strongest oracle
+available for this program: it is the artefact classv is a model of. The
+probe prints one word per class file -- `ACCEPT`, `VERIFY`, `FORMAT`,
+`OTHER` or `ORACLE_NA` -- and the last of those is never counted as
+agreement with anything.
+
+Three things about HotSpot were measured rather than assumed, and all three
+changed the design of the harness.
+
+- **`ClassLoader.defineClass` does not verify.** It returns a perfectly good
+  `Class` object for a class whose bytecode is nonsense. Verification happens
+  at link time, and `getDeclaredMethods()` is the cheapest way to force
+  linking without also running the static initialiser.
+- **A boot loaded class is not verified at all without `-Xverify:all`.**
+  `BytecodeVerificationLocal` defaults to false. The suite proves this rather
+  than citing it: it compiles a `java.lang.Zz`, breaks its bytecode, patches
+  it into `java.base` with `--patch-module`, and requires the class to link
+  cleanly without the flag and to throw `VerifyError` with it. Most of the
+  module image is boot loaded, so without that flag the whole corpus would
+  come back `ACCEPT` and the agreement number would be worthless.
+- **One class loader per class does not work.** A runtime package is
+  identified by (loader, package name), so a corpus class whose superclass is
+  package private in the same package fails with `IllegalAccessError` when
+  the superclass comes from the boot loader and the subclass does not. That
+  was 153 of the first 400 `java.base` classes, and no `--add-exports` fixes
+  it, because it is not a module access check. Defining the whole corpus in
+  one child-first loader puts both halves in the same runtime package.
+
+Even then the split loader has a residue: a corpus class whose supertype
+chain crosses into a `java.*` package picks up the boot loader's copy of a
+type halfway along, and the two copies are not assignable to each other. 324
+of `java.desktop`'s classes failed that way, every one of them naming
+`javax/swing/JPanel.getAccessibleContext` or a sibling rather than itself. A
+`VerifyError` whose `Location:` line names a class other than the one being
+asked about is therefore reported as `ORACLE_NA`, not as a verdict.
+
+So the module image corpus is asked about through `Class.forName(name, false,
+systemLoader)` with `-Xverify:all --add-modules ALL-SYSTEM`, which uses the
+real loaders and has no split at all. Over all 27846 classes in the image
+that is **27777 ACCEPT, 0 reject, 69 no opinion**; the 69 are the
+`module-info.class` files, one per module, which are not classes you can ask
+`Class.forName` about. The child-first loader is for files the running JDK
+does not already have: the mutation corpus and the `javac` corpora.
+
+The oracle is also shown saying no before any agreement number is believed.
+Nineteen planted defects in one fixture, each with the answer measured by
+hand once and written into the suite:
+
+| planted defect | HotSpot's answer |
+|---|---|
+| `ireturn` -> `areturn` | VerifyError: Bad type on operand stack |
+| `iload_0` -> `aload_0` | VerifyError: Bad local variable type |
+| `aload_0` -> `iload_0` | VerifyError: Bad local variable type |
+| `dup` -> `dup2`, `pop` -> `pop2`, `return` -> `athrow` | VerifyError: Operand stack underflow |
+| `iadd` -> `ladd` | VerifyError: Bad type on operand stack |
+| `max_stack` minus one | VerifyError: Operand stack overflow |
+| a stack map frame moved one byte | VerifyError: StackMapTable error: bad offset |
+| the StackMapTable constant renamed away | VerifyError: Expecting a stackmap frame at branch target 14 |
+| a field or method operand pointing one entry away | VerifyError: Illegal type at constant pool entry N |
+| `max_locals` minus one | ClassFormatError: Arguments can't fit into locals |
+| the last 1 or 4 bytes dropped | ClassFormatError: Truncated class file |
+| major version 99 | UnsupportedClassVersionError |
+| major version 45 | ClassFormatError: Class file version does not support constant tag 18 |
+| `super_class` = `this_class` | ClassCircularityError |
 
 **`javap -v -p -c`.** The JDK's own disassembler. It cannot verify anything,
 but it pins the parse, and everything later reads the parse. The comparison is
@@ -101,9 +163,8 @@ the comparison script.
 
 ## What does not work
 
-Everything after the parse. The type checker is the next milestone and
-`--verify` currently prints `REFUSE` and exits 3, which is a deliberate
-distinct status: "classv has not looked at this" and "the JVM would reject
+The type checker. `--verify` prints `REFUSE` and exits 3, which is a
+deliberate distinct status: "classv has not looked at this" and "the JVM would reject
 this" must never be counted as the same answer.
 
 Also not done, and listed in PLAN.md: the `Exceptions`, `BootstrapMethods`,

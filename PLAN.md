@@ -148,11 +148,21 @@ Ranked by how little of them we control:
 - [ ] Constructors: uninitialized, uninitializedThis, and flagThisUninit
       why: it is the only part of the algorithm with a flag, and the only
       place where a type changes identity mid-frame.
-- [ ] The JVM oracle harness, both loading paths
+- [x] The JVM oracle harness, both loading paths
       why: this is the headline number and it does not exist yet.
+      done: t/Probe.java. 27777 of 27846 module image classes answered
+      about, 0 rejected, 69 with no opinion (the module-info files). The
+      oracle is shown saying no on 19 planted defects covering six distinct
+      HotSpot diagnoses, and -Xverify:all is shown to be load bearing by
+      planting a broken java.lang class through --patch-module and watching
+      it link cleanly without the flag.
 
 ### Milestone 2: make the agreement mean something
 
+- [x] t/mutate.py and t/cf.py: a way to build a corrupted class file
+      why: a corpus of valid classes can only catch classv rejecting valid
+      code. Nine recipes so far, positioned by javap's instruction offsets
+      rather than by classv's own decoder.
 - [ ] A mutation corpus aimed at JVMS 4.10.1, one family per rule
       why: a corpus of valid classes can only catch classv rejecting valid
       code. The other direction needs invalid code the JVM rejects.
