@@ -102,6 +102,34 @@ hand once and written into the suite:
 | major version 45 | ClassFormatError: Class file version does not support constant tag 18 |
 | `super_class` = `this_class` | ClassCircularityError |
 
+**`Class.isAssignableFrom`.** The JVM's own reflective subtype relation,
+for the part of JVMS 4.10.1.2 that is a question about the class hierarchy.
+It is deliberately *not* an authority for the whole rule: the verifier
+answers "yes" for every interface target without checking anything and
+defers the real check to the `invokeinterface` call site. So the comparison
+runs on non-interface targets, and the interface divergence is counted
+separately and asserted to be non-empty -- if it were empty the permissive
+rule would be unreachable and the comparison would prove nothing about it.
+
+Pairs are built along real superclass chains in both directions, plus arrays
+of each, plus every pair of the eight primitive array types, because a random
+pair of JDK classes is almost always "not assignable" and a comparison whose
+answer is the same constant 99% of the time is a weak instrument however many
+pairs it runs. Over the first 3000 classes of `java.base`:
+
+```
+--- isAssignable vs Class.isAssignableFrom: 40164 pairs on non-interface
+    targets, 24194 assignable, 15970 not, 0 refused; interface targets: 8970
+    where the verifier is more permissive than reflection, 1403 where both
+    say yes
+```
+
+It found a real defect on its first run. `byte`, `char`, `short`, `boolean`
+and `int` are all the single verification type `int`, so comparing array
+element types as verification types made `[C` assignable to `[I`. Forty pairs
+failed, every one of them a primitive array. The element comparison is on
+descriptors now.
+
 **`javap -v -p -c`.** The JDK's own disassembler. It cannot verify anything,
 but it pins the parse, and everything later reads the parse. The comparison is
 on extracted facts, never on text: the two output formats share nothing and

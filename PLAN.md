@@ -117,11 +117,16 @@ Ranked by how little of them we control:
 - [x] The verification type representation, JVMS 4.10.1.2
       why: the stack map table holds verification types, so the type has to
       exist before the table can be read. isAssignable is the next item.
-- [ ] `isAssignable` and the lattice, JVMS 4.10.1.2
+- [x] `isAssignable` and the lattice, JVMS 4.10.1.2
       why: every instruction rule is phrased in terms of it, and the
       interface rule (any reference is assignable to any interface type) is
       the one everybody gets wrong by being too strict.
-- [ ] The class hierarchy resolver the lattice needs
+      done: 40164 pairs against Class.isAssignableFrom over 3000 classes,
+      0 disagreements, with the 8970 interface-target divergences counted
+      apart and asserted non-empty. Six mutations all caught. One real
+      defect found: [C was assignable to [I because char and int are the
+      same verification type.
+- [x] The class hierarchy resolver the lattice needs
       why: `isJavaAssignable(class(X), class(Y))` is a question about loaded
       classes, so it needs an answer from somewhere; the corpus's own files
       plus reflection is the honest source, and where neither can answer the

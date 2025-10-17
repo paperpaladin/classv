@@ -4,6 +4,8 @@
 # Everything here is measured against something outside classv:
 #   javap   -- the JDK's own disassembler, for the parse and the bytecode
 #   java    -- the real HotSpot verifier, through t/Probe.java
+#   Class.isAssignableFrom -- the JVM's own subtype relation, for the part of
+#              JVMS 4.10.1.2 that is a question about the class hierarchy
 #
 # The corpus is the JDK's own lib/modules, unpacked with jimage.  By default
 # that is the java.base module; CLASSV_FULL=1 uses every module in the image.
@@ -165,6 +167,22 @@ if [ "$off" = LINKED ] && [ "$on" = VerifyError ]; then
 else
 	bad "the -Xverify:all experiment gave off=$off on=$on, wanted LINKED and VerifyError"
 fi
+
+# ------------------------------- oracle 3: Class.isAssignableFrom, the lattice
+echo
+echo "--- oracle 3: Class.isAssignableFrom"
+javac -d "$work/probe" -cp "$root/build" "$here/AssignCmp.java" 2>&1 	|| { echo "cannot build AssignCmp"; exit 2; }
+sed -n "1,${ASSIGN_N:-3000}p" "$work/corpus.txt" 	| sed "s|$work/jdk/[a-z.]*/||;s|\.class$||;s|/|.|g" > "$work/names.txt"
+out=$(java --add-modules ALL-SYSTEM -cp "$root/build:$work/probe" AssignCmp \
+	"$work/names.txt" 2>"$work/assign.err")
+grep -v 'WARNING: Using incubator modules' "$work/assign.err" | grep . && \
+	bad "AssignCmp wrote to stderr"
+echo "$out" | grep -v '^ASSIGN_'
+p=$(printf '%s\n' "$out" | sed -n 's/^ASSIGN_PASS //p')
+f=$(printf '%s\n' "$out" | sed -n 's/^ASSIGN_FAIL //p')
+[ -n "$p" ] || { echo "AssignCmp produced no count"; exit 2; }
+pass=$((pass + p))
+fail=$((fail + f))
 
 echo
 echo "$pass passed, $fail failed"
