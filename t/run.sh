@@ -184,6 +184,65 @@ f=$(printf '%s\n' "$out" | sed -n 's/^ASSIGN_FAIL //p')
 pass=$((pass + p))
 fail=$((fail + f))
 
+# -------------------------- oracle 4: the JVM's verdict against classv's own
+#
+# The headline comparison.  The corpus is asked about through the real system
+# class loader, so there is no loader split and nothing has to be patched in.
+echo
+echo "--- oracle 4: the JVM's verdict against classv's"
+CP=""
+ROOTS=""
+for d in "$work"/jdk/*/; do
+	CP="$CP --cp $d"
+	ROOTS="$ROOTS:${d%/}"
+done
+ROOTS=${ROOTS#:}
+out=$(python3 "$here/jvm_cmp.py" "$work/corpus.txt" system \
+	"java -cp $root/build classv.Main $CP" \
+	"java -Xverify:all --add-modules ALL-SYSTEM -cp $work/probe Probe")
+echo "$out" | grep -v '^JVM_'
+p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
+f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
+[ -n "$p" ] || { echo "jvm_cmp.py produced no count"; exit 2; }
+pass=$((pass + p))
+fail=$((fail + f))
+
+# ------------------------------------------- oracle 5: the mutation sweep
+#
+# A corpus of valid classes can only catch classv rejecting something the JVM
+# accepts.  This is the other direction: corrupt real classes in ways aimed
+# at the rules of JVMS 4.10.1 and require both sides to reject them.
+echo
+echo "--- oracle 5: the mutation sweep"
+# Every (module, package) pair exported to the unnamed module.  Without this
+# a mutant whose superinterface lives in a module that exports nothing comes
+# back IllegalAccessError, which is the harness and not a verdict.
+cat > "$work/Exp.java" <<'JEOF'
+public class Exp { public static void main(String[] a) {
+  for (Module m : ModuleLayer.boot().modules())
+    for (String p : m.getPackages())
+      System.out.println("--add-exports=" + m.getName() + "/" + p + "=ALL-UNNAMED");
+} }
+JEOF
+javac -d "$work/probe" "$work/Exp.java" 2>/dev/null
+java --add-modules ALL-SYSTEM -cp "$work/probe" Exp 2>/dev/null > "$work/exports.args"
+# java.* classes cannot be defined by a user class loader at all, so they
+# cannot be mutation sources; the sample is drawn from the rest.
+grep -v '/jdk/[a-z.]*/java/' "$work/corpus.txt" | awk 'NR % 7 == 1' \
+	| head -"${MUT_N:-150}" > "$work/mutsrc.txt"
+msrc=$(wc -l < "$work/mutsrc.txt")
+echo "--- $msrc mutation sources"
+[ "$msrc" -ge 50 ] || { echo "only $msrc mutation sources; too few to mean anything"; exit 2; }
+out=$(CLASSV_ROOTS="$ROOTS" python3 "$here/mutation_sweep.py" "$work/mutsrc.txt" \
+	"$work/mut" "java -cp $root/build classv.Main $CP" \
+	"java @$work/exports.args -cp $work/probe Probe")
+echo "$out" | grep -v '^MUT_'
+p=$(printf '%s\n' "$out" | sed -n 's/^MUT_PASS //p')
+f=$(printf '%s\n' "$out" | sed -n 's/^MUT_FAIL //p')
+[ -n "$p" ] || { echo "mutation_sweep.py produced no count"; exit 2; }
+pass=$((pass + p))
+fail=$((fail + f))
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

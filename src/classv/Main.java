@@ -23,7 +23,8 @@ public final class Main {
             EXIT_REFUSE = 3, EXIT_FORMAT = 4;
 
     private static final String USAGE =
-            "usage: classv [--info] [--pool] [--disasm] [--smt] [--verify] [--all] FILE.class";
+            "usage: classv [--info] [--pool] [--disasm] [--smt] [--frames] [--verify]\n"
+            + "              [--cp DIR]... [--all] FILE.class... | @LISTFILE";
 
     public static void main(String[] args) {
         System.exit(run(args, System.out, System.err));
@@ -31,6 +32,9 @@ public final class Main {
 
     static int run(String[] args, PrintStream out, PrintStream err) {
         boolean info = false, pool = false, disasm = false, verify = false, smt = false;
+        boolean frames = false;
+        Hierarchy hierarchy = new Hierarchy();
+        boolean wantCp = false;
         java.util.List<String> files = new java.util.ArrayList<>();
         for (String a : args) {
             switch (a) {
@@ -39,9 +43,12 @@ public final class Main {
                 case "--disasm": disasm = true; break;
                 case "--smt": smt = true; break;
                 case "--verify": verify = true; break;
+                case "--frames": frames = true; verify = true; break;
+                case "--cp": wantCp = true; break;
                 case "--all": info = pool = disasm = smt = verify = true; break;
                 case "-h": case "--help": out.println(USAGE); return EXIT_OK;
                 default:
+                    if (wantCp) { hierarchy.addRoot(a); wantCp = false; break; }
                     if (a.startsWith("-")) { err.println(USAGE); return EXIT_USAGE; }
                     if (a.startsWith("@")) {
                         // The corpus is 27846 files; that does not fit in argv.
@@ -68,7 +75,7 @@ public final class Main {
         int worst = EXIT_OK;
         for (String f : files) {
             if (files.size() > 1) out.println("== " + f);
-            int st = one(f, info, pool, disasm, smt, verify, out, err);
+            int st = one(f, info, pool, disasm, smt, verify, frames, hierarchy, out, err);
             if (st == EXIT_USAGE) return EXIT_USAGE;
             if (st > worst) worst = st;
         }
@@ -76,7 +83,8 @@ public final class Main {
     }
 
     static int one(String file, boolean info, boolean pool, boolean disasm, boolean smt,
-                   boolean verify, PrintStream out, PrintStream err) {
+                   boolean verify, boolean frames, Hierarchy hierarchy,
+                   PrintStream out, PrintStream err) {
 
         byte[] data;
         try {
@@ -108,12 +116,25 @@ public final class Main {
             return EXIT_OK;
         }
 
-        // The type checker lands in the next commit.  A refusal is a distinct
-        // exit status from a rejection for exactly this reason: "classv has
-        // not looked at this" and "the JVM would reject this" must never be
-        // counted as the same answer.
-        out.println("REFUSE " + cf.thisClass + ": the type checker is not implemented yet");
-        return EXIT_REFUSE;
+        Verifier v = new Verifier(cf, hierarchy);
+        v.dumpFrames = frames;
+        v.out = out;
+        if (frames) out.println("frames " + cf.thisClass);
+        Verifier.Result r = v.verify();
+        switch (r.kind) {
+            case OK:
+                out.println("OK " + cf.thisClass);
+                return EXIT_OK;
+            case VERIFY:
+                out.println("VERIFY " + r.message);
+                return EXIT_VERIFY;
+            case FORMAT:
+                out.println("FORMAT " + cf.thisClass + ": " + r.message);
+                return EXIT_FORMAT;
+            default:
+                out.println("REFUSE " + cf.thisClass + ": " + r.message);
+                return EXIT_REFUSE;
+        }
     }
 
     private static void printInfo(ClassFile cf, PrintStream out) {

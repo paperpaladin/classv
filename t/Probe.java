@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Probe {
@@ -57,9 +58,29 @@ public class Probe {
      */
     static final class Corpus extends ClassLoader {
         private final java.util.Map<String, String> index;
-        Corpus(java.util.Map<String, String> index) {
+        private final List<Path> roots;
+        Corpus(java.util.Map<String, String> index, List<Path> roots) {
             super(Probe.class.getClassLoader());
             this.index = index;
+            this.roots = roots;
+        }
+
+        /**
+         * Where a name that is not one of the files under test comes from.
+         * Without this, a mutant whose superclass is package private in the
+         * same package gets the boot loader's copy, which is a different
+         * runtime package, and the JVM answers IllegalAccessError instead of
+         * answering about the class file: 523 of 2959 mutants in one sweep.
+         */
+        private String find(String name) {
+            String s = index.get(name);
+            if (s != null) return s;
+            String rel = name.replace('.', '/') + ".class";
+            for (Path r : roots) {
+                Path p = r.resolve(rel);
+                if (Files.isRegularFile(p)) return p.toString();
+            }
+            return null;
         }
 
         @Override
@@ -67,7 +88,8 @@ public class Probe {
                 throws ClassNotFoundException {
             synchronized (getClassLoadingLock(name)) {
                 Class<?> c = findLoadedClass(name);
-                if (c == null && !name.startsWith("java.") && index.containsKey(name)) {
+                String src = c == null && !name.startsWith("java.") ? find(name) : null;
+                if (src != null) {
                     // A LinkageError from defineClass is the answer, not a
                     // reason to fall back to the parent.  Swallowing it made
                     // a truncated class file and a class file claiming major
@@ -75,7 +97,7 @@ public class Probe {
                     // parent then found the JDK's own good copy.
                     byte[] b;
                     try {
-                        b = Files.readAllBytes(Path.of(index.get(name)));
+                        b = Files.readAllBytes(Path.of(src));
                     } catch (IOException e) {
                         b = null;
                     }
@@ -144,7 +166,7 @@ public class Probe {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
-            System.err.println("usage: Probe system|define LISTFILE");
+            System.err.println("usage: Probe system|define LISTFILE [ROOT:ROOT...]");
             System.exit(2);
         }
         String mode = args[0];
@@ -163,7 +185,11 @@ public class Probe {
                 }
             }
         }
-        Corpus corpus = new Corpus(index);
+        List<Path> roots = new ArrayList<>();
+        if (args.length > 2 && !args[2].isEmpty())
+            for (String r : args[2].split(java.io.File.pathSeparator))
+                roots.add(Path.of(r));
+        Corpus corpus = new Corpus(index, roots);
         PrintStream out = new PrintStream(new java.io.BufferedOutputStream(
                 new java.io.FileOutputStream(java.io.FileDescriptor.out), 1 << 16), false);
         for (String p : paths) {
@@ -234,6 +260,11 @@ public class Probe {
                 // because folding a third answer into one of two is how a
                 // comparison starts agreeing about things it never checked.
                 out.println("OTHER\t" + p + "\t" + flat(e));
+            } catch (IllegalAccessError e) {
+                // Always the harness and never the class file: a corpus class
+                // in the unnamed module reaching a superclass that its own
+                // module does not export.  Never a verdict.
+                out.println("ORACLE_NA\t" + p + "\t" + flat(e));
             } catch (LinkageError e) {
                 String m = e.getMessage();
                 if (m != null && (m.contains(name) || m.contains(name.replace('.', '/'))))

@@ -27,6 +27,8 @@ import java.util.Map;
  */
 public final class Hierarchy {
 
+    private static final String OBJECT = "java/lang/Object";
+
     /** What the checker needs to know about one class. */
     static final class Info {
         final boolean isInterface;
@@ -92,6 +94,15 @@ public final class Hierarchy {
                     Hierarchy.class.getClassLoader());
             reflectLookups++;
             Class<?> s = c.getSuperclass();
+            if (s == null && c.isInterface()) {
+                // Reflection says an interface has no superclass.  The class
+                // file says java/lang/Object, and so does JVMS 4.1, and the
+                // verifier's isJavaSubclassOf walks super_class.  Taking
+                // reflection at its word made every interface typed value
+                // fail to be assignable to Object, which is most of
+                // java.lang.String.
+                return new Info(true, OBJECT);
+            }
             return new Info(c.isInterface(), s == null ? null : s.getName().replace('.', '/'));
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
@@ -115,7 +126,7 @@ public final class Hierarchy {
 
     // ------------------------------------------------------- JVMS 4.10.1.2
 
-    private static final String OBJECT = "java/lang/Object";
+
 
     /**
      * isAssignable(from, to).  Written in the order the spec writes it so the

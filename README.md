@@ -16,9 +16,19 @@ code main ([Ljava/lang/String;)V
 ```
 
 ```
-usage: classv [--info] [--pool] [--disasm] [--smt] [--verify] [--all] FILE.class...
-              @LISTFILE   one path per line
+usage: classv [--info] [--pool] [--disasm] [--smt] [--frames] [--verify]
+              [--cp DIR]... [--all] FILE.class... | @LISTFILE
 ```
+
+`--cp DIR` adds a directory of class files that the hierarchy resolver may
+read to answer subtype questions. It never loads them; it parses them with
+classv's own parser, so nothing is initialised and no code runs. `@LISTFILE`
+takes one path per line, because the corpus is 27846 files and that does not
+fit in argv.
+
+Exit status: 0 accepted, 1 rejected by the type checker, 2 usage, 3 classv
+refused to analyse the file, 4 the file is not a well formed class file.
+Three and one are deliberately different numbers.
 
 ## Why this exists
 
@@ -118,11 +128,18 @@ answer is the same constant 99% of the time is a weak instrument however many
 pairs it runs. Over the first 3000 classes of `java.base`:
 
 ```
---- isAssignable vs Class.isAssignableFrom: 40164 pairs on non-interface
-    targets, 24194 assignable, 15970 not, 0 refused; interface targets: 8970
+--- isAssignable vs Class.isAssignableFrom: 43164 pairs on non-interface
+    targets, 27194 assignable, 15970 not, 0 refused; interface targets: 8970
     where the verifier is more permissive than reflection, 1403 where both
     say yes
 ```
+
+A second defect came out of the same comparison later, once it started
+pairing every class with `java/lang/Object`. Reflection says an interface has
+no superclass, so `Hierarchy` built from `getSuperclass()` recorded a null
+super for every interface, and `isJavaSubclassOf` then answered no to
+"is `CharSequence` assignable to `Object`". The class file says
+`java/lang/Object` and so does JVMS 4.1; reflection is the odd one out.
 
 It found a real defect on its first run. `byte`, `char`, `short`, `boolean`
 and `int` are all the single verification type `int`, so comparing array
@@ -189,16 +206,90 @@ classv's own `--pool` output does not have these holes: every character
 outside printable ASCII is written as `\uXXXX`. The folding happens only in
 the comparison script.
 
+## The verdict, against the JVM's own
+
+Two comparisons, and refusals are counted apart from agreement in both.
+
+Over `java.base` from this machine's JDK 21 image, every class asked about
+through the real system loader under `-Xverify:all`:
+
+```
+--- the JVM vs classv: 7573 agree accept, 0 agree reject, 0 false accept,
+    0 false reject
+--- the JVM vs classv: the JVM had no opinion on 1
+```
+
+classv refused none of the 7574. The one the JVM has no opinion about is
+`module-info.class`, which is not a class you can ask `Class.forName` for.
+
+A corpus of valid classes can only catch classv rejecting good code, so the
+other direction is a mutation sweep: 44 recipes aimed at the rules of JVMS
+4.10.1 and at the structural checks around them, each applied to 150 real
+classes drawn from the image.
+
+```
+--- mutation sweep: 7 agree accept, 2664 agree reject (2382 in the same
+    category), 0 false accept, 0 false reject
+--- mutation sweep: classv refused 150
+--- mutation sweep: the JVM had no opinion on 103
+--- mutation sweep: 2924 mutants built, 2671 answered about by both
+```
+
+Read the refusal line first. All 150 refusals are one recipe, `major:45`,
+which rewrites the version to 45.0 and so produces a class the JVM verifies
+by type *inference*; classv refuses that path by name. That recipe therefore
+measures the refusal and nothing else, and the sweep says so in its own
+output. The 103 the JVM has no opinion on are mutants whose `VerifyError`
+names some other class than the one being asked about, which is the loader
+split described above and not a verdict.
+
+Of the 2664 agreed rejections, 2382 are in the same category: both sides call
+it a verification error, or both call it a malformed file. The remaining 282
+are agreed rejections where one side says `VERIFY` and the other `FORMAT`.
+That is a weaker agreement than the headline, which is why the number is
+printed. Comparing the *reason* rather than the category is on PLAN.md and is
+not done.
+
+Three recipes produced no mutant at all over this sample
+(`subst:ladd:iadd`, `subst:pop2:pop`, `subst:nop:pop`), and the sweep names
+them rather than quietly reporting a smaller corpus.
+
 ## What does not work
 
-The type checker. `--verify` prints `REFUSE` and exits 3, which is a
-deliberate distinct status: "classv has not looked at this" and "the JVM would reject
-this" must never be counted as the same answer.
+**`return` from a constructor that never called `super()`.** classv accepts
+it; HotSpot says `VerifyError: Constructor must call super() or this() before
+return`. The flag is tracked through every frame and the check at `return` is
+a stub.
 
-Also not done, and listed in PLAN.md: the `Exceptions`, `BootstrapMethods`,
-`Record` and annotation attributes are not decoded at all, and there is no truncation or corruption
-sweep yet, so "the parser never throws anything but ClassFormatException" is
-currently an intention rather than a measurement.
+**The type inference verifier**, JVMS 4.10.2, the pre-Java-6 path with no
+`StackMapTable`. Class file version 49 and below are refused by name. Version
+50 is refused too, and for a different reason: 50 is the one version where
+HotSpot retries with the inference verifier if type checking fails, so a
+rejection from classv would not predict the JVM's answer even when classv is
+right.
+
+**`jsr` and `ret`** are rejected rather than analysed, which is what the type
+checking path does, so that is not a gap. Classes needing them are version 49
+or below and are refused before the question arises.
+
+**The structural checks are not a complete class file validator.** The
+load-time rules in `Verifier.structure()` are only the ones a mutation sweep
+has shown the JVM to be reachable on, each with the HotSpot diagnosis it was
+added for. A malformed class file that no recipe produces may well be
+accepted.
+
+**Attributes parsed as opaque bytes**: `Exceptions`, `BootstrapMethods`,
+`Record`, and the annotation attributes. A length error inside one is
+invisible.
+
+**No truncation or corruption sweep over the whole file**, so "the parser
+throws nothing but `ClassFormatException`" is an intention and not a
+measurement.
+
+**One compiler.** Every class in the corpus came out of the javac that built
+the JDK image. `javac --release 8` through 21 is on PLAN.md and is not wired
+in yet, and Kotlin, Scala and ecj are not installed on this machine, so the
+variety of stack map shapes here is narrower than the format allows.
 
 ## License
 

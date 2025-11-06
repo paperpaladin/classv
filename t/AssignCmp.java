@@ -82,6 +82,12 @@ public class AssignCmp {
                 pair(h, array(s), array(c));
             }
             // a cross pair, to get some unrelated types in
+            // Every reference type is assignable to Object, including an
+            // interface type, whose getSuperclass() is null.  That case was
+            // missing from the first version of this comparison and the hole
+            // it left made every interface typed value fail to be assignable
+            // to Object, which java/lang/String.contentEquals found instead.
+            pair(h, c, Object.class);
             Class<?> other = cls.get((i * 7919 + 13) % cls.size());
             pair(h, c, other);
             pair(h, array(c), array(other));

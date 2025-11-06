@@ -144,15 +144,24 @@ Ranked by how little of them we control:
       boundary. One mutation of the expansion is provably equivalent
       (dropping the first-frame special case, since prev starts at -1)
       and is recorded as a survivor.
-- [ ] The instruction transition table, JVMS 4.10.1.9
+- [x] The instruction transition table, JVMS 4.10.1.9
       why: this is the body of the algorithm. Roughly 200 rules.
-- [ ] Frame merging at branch targets and the exception handler rule
+      done: every opcode has a rule, wide included; jsr, ret and jsr_w are
+      rejected the way the type checking path rejects them.
+- [x] Frame merging at branch targets and the exception handler rule
       why: this is where real classes fail, and the handler rule
       (every instruction in the range must be assignable to the handler's
       frame) is the one that costs the most to get right.
-- [ ] Constructors: uninitialized, uninitializedThis, and flagThisUninit
+      done: 7573 of 7574 java.base classes agree with the JVM, 0 refused.
+- [x] Constructors: uninitialized, uninitializedThis, and flagThisUninit
       why: it is the only part of the algorithm with a flag, and the only
       place where a type changes identity mid-frame.
+      done, with one hole: return from a constructor that never called
+      another constructor is accepted. See the next item.
+- [ ] The flagThisUninit check at return, and a mutation that reaches it
+      why: it is a false accept, measured: HotSpot answers "Constructor must
+      call super() or this() before return" to a class classv says OK to.
+      No recipe in the sweep produces that shape, which is why it survived.
 - [x] The JVM oracle harness, both loading paths
       why: this is the headline number and it does not exist yet.
       done: t/Probe.java. 27777 of 27846 module image classes answered
@@ -168,9 +177,14 @@ Ranked by how little of them we control:
       why: a corpus of valid classes can only catch classv rejecting valid
       code. Nine recipes so far, positioned by javap's instruction offsets
       rather than by classv's own decoder.
-- [ ] A mutation corpus aimed at JVMS 4.10.1, one family per rule
+- [x] A mutation corpus aimed at JVMS 4.10.1, one family per rule
       why: a corpus of valid classes can only catch classv rejecting valid
       code. The other direction needs invalid code the JVM rejects.
+      done: t/mutation_sweep.py, 44 recipes over 150 real classes, 2924
+      mutants, 2664 rejected by both sides, 0 false accept, 0 false reject,
+      150 refused and counted apart. The sweep names the recipes that
+      produced no mutant and the recipes the JVM accepted every mutant of,
+      because either is a recipe that measures nothing.
 - [ ] Compare the *reason* and not only the verdict
       why: agreeing that a class is bad while disagreeing about which
       instruction is bad is a much weaker claim than it reads as.

@@ -20,7 +20,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import cf        # noqa: E402
+import cf          # noqa: E402
+import javap_cmp   # noqa: E402
 
 # Opcode numbers for the substitution recipes.  Same length, different type.
 OPC = {
@@ -38,27 +39,47 @@ OPC = {
 INSN_RE = re.compile(r'^\s+(\d+): (\S+)')
 
 
+# javap is run once for a whole batch and the result cached, because a sweep
+# of twenty recipes over four hundred classes would otherwise start eight
+# thousand JVMs.  The parse is javap_cmp.py's, which the suite already
+# mutation tests, rather than a second one written here.
+INSN_CACHE = {}
+
+
+def javap_batch(paths):
+    """Fill INSN_CACHE for every path, in as few javap invocations as possible."""
+    todo = [p for p in paths if os.path.realpath(p) not in INSN_CACHE]
+    for i in range(0, len(todo), 300):
+        chunk = todo[i:i + 300]
+        r = subprocess.run(['javap', '-v', '-c', '-p'] + chunk, capture_output=True,
+                           text=True, errors='replace')
+        for c in javap_cmp.parse_javap(r.stdout):
+            out = []
+            mi = -1
+            for m in c['codes']:
+                if m['code'] is None:
+                    # An abstract or native method is in javap's member list
+                    # and not in the Code list a mutation indexes into.
+                    # Counting it put every mutation of a class with an
+                    # abstract method at the wrong byte, which still produced
+                    # a corrupt file but not the corruption the recipe names.
+                    continue
+                mi += 1
+                for text in m['code']['insns']:
+                    pc, _, rest = text.partition(' ')
+                    out.append((mi, int(pc), rest.split(' ')[0]))
+            INSN_CACHE[os.path.realpath(c['path'])] = out
+        for p in chunk:
+            INSN_CACHE.setdefault(os.path.realpath(p), [])
+
+
 def javap_insns(path):
     """-> list of (method_index, pc, mnemonic), method_index counting methods
     with a Code attribute in file order."""
-    r = subprocess.run(['javap', '-c', '-p', path], capture_output=True,
-                       text=True, errors='replace')
-    out = []
-    mi = -1
-    in_code = False
-    for ln in r.stdout.split('\n'):
-        if re.match(r'^\s+Code:\s*$', ln):
-            mi += 1
-            in_code = True
-            continue
-        if not in_code:
-            continue
-        m = INSN_RE.match(ln)
-        if m:
-            out.append((mi, int(m.group(1)), m.group(2)))
-        elif ln.strip() and not ln.startswith(' ' * 10):
-            in_code = False
-    return out
+    rp = os.path.realpath(path)
+    if rp not in INSN_CACHE:
+        javap_batch([path])
+    return INSN_CACHE.get(rp, [])
 
 
 def code_methods(c):
@@ -177,7 +198,118 @@ def r_major(c, path, arg):
     return 'major version %s' % arg
 
 
+BRANCHES = set(('goto', 'goto_w', 'jsr', 'ifeq', 'ifne', 'iflt', 'ifge', 'ifgt', 'ifle',
+                'if_icmpeq', 'if_icmpne', 'if_icmplt', 'if_icmpge', 'if_icmpgt',
+                'if_icmple', 'if_acmpeq', 'if_acmpne', 'ifnull', 'ifnonnull'))
+
+
+def r_branch(c, path, arg):
+    """branch:DELTA -- add DELTA to the first two byte branch offset."""
+    d = int(arg)
+    ms = code_methods(c)
+    for mi, pc, mnem in javap_insns(path):
+        if mnem in BRANCHES and mnem != 'goto_w' and mi < len(ms):
+            off = ms[mi].code.code_off + pc + 1
+            v = c.u2(off)
+            if v >= 32768:
+                v -= 65536
+            nv = v + d
+            if not (0 <= pc + nv < ms[mi].code.code_len):
+                continue
+            c.set_u2(off, nv & 0xffff)
+            return '%s at %s+%d target %+d -> %+d' % (mnem, ms[mi].name, pc, v, nv)
+    return None
+
+
+def r_iicount(c, path, arg):
+    """iicount:DELTA -- add DELTA to the first invokeinterface count byte."""
+    d = int(arg)
+    ms = code_methods(c)
+    for mi, pc, mnem in javap_insns(path):
+        if mnem == 'invokeinterface' and mi < len(ms):
+            off = ms[mi].code.code_off + pc + 3
+            v = c.u1(off)
+            if 0 <= v + d <= 255:
+                c.set_u1(off, v + d)
+                return 'invokeinterface count %d -> %d' % (v, v + d)
+    return None
+
+
+def smt_first_type_offset(c, a):
+    """Offset of the first verification_type_info byte in a StackMapTable."""
+    if a.length < 3:
+        return None
+    ft = c.u1(a.off + 2)
+    if 64 <= ft <= 127:
+        return a.off + 3
+    if ft == 247:
+        return a.off + 5
+    if 252 <= ft <= 254:
+        return a.off + 5
+    if ft == 255:
+        n = c.u2(a.off + 5)
+        return a.off + 7 if n else None
+    return None
+
+
+def r_smtitem(c, path, arg):
+    """smtitem:TAG -- set the first verification type in a StackMapTable to TAG."""
+    tag = int(arg)
+    for m in code_methods(c):
+        for x in m.code.attrs:
+            if x.name != 'StackMapTable':
+                continue
+            o = smt_first_type_offset(c, x)
+            if o is None or c.u1(o) == tag:
+                continue
+            was = c.u1(o)
+            c.set_u1(o, tag)
+            return 'stack map item tag %d -> %d in %s' % (was, tag, m.name)
+    return None
+
+
+def r_handlertype(c, path, arg):
+    """handlertype -- point the first exception handler at this_class."""
+    this = c.u2(c.this_off)
+    for m in code_methods(c):
+        if m.code.handlers == 0:
+            continue
+        off = m.code.handlers_off + 6
+        if c.u2(off) == this:
+            continue
+        was = c.u2(off)
+        c.set_u2(off, this)
+        return 'handler catch_type #%d -> #%d in %s' % (was, this, m.name)
+    return None
+
+
+def r_swapcode(c, path, arg):
+    """swapcode -- exchange the first two adjacent one byte instructions."""
+    ms = code_methods(c)
+    ins = javap_insns(path)
+    for k in range(len(ins) - 2):
+        mi, pc, mn = ins[k]
+        mi2, pc2, mn2 = ins[k + 1]
+        mi3, pc3, _ = ins[k + 2]
+        if mi != mi2 or mi != mi3 or mi >= len(ms):
+            continue
+        if pc2 - pc != 1 or pc3 - pc2 != 1 or mn == mn2:
+            continue
+        base = ms[mi].code.code_off
+        a0 = c.u1(base + pc)
+        b0 = c.u1(base + pc2)
+        c.set_u1(base + pc, b0)
+        c.set_u1(base + pc2, a0)
+        return 'swapped %s and %s at %s+%d' % (mn, mn2, ms[mi].name, pc)
+    return None
+
+
 RECIPES = {
+    'branch': r_branch,
+    'iicount': r_iicount,
+    'smtitem': r_smtitem,
+    'handlertype': r_handlertype,
+    'swapcode': r_swapcode,
     'subst': r_subst,
     'maxstack': r_maxstack,
     'maxlocals': r_maxlocals,
