@@ -36,7 +36,7 @@ DEFAULT = [
     'cpindex:1', 'cpindex:-1',
     'branch:1', 'branch:-1', 'branch:3',
     'iicount:1', 'iicount:-1',
-    'handlertype', 'swapcode',
+    'handlertype', 'swapcode', 'noinit',
     'truncate:1', 'truncate:4', 'truncate:40',
     'superself', 'major:99', 'major:45',
 ]

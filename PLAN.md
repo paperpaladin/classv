@@ -158,10 +158,12 @@ Ranked by how little of them we control:
       place where a type changes identity mid-frame.
       done, with one hole: return from a constructor that never called
       another constructor is accepted. See the next item.
-- [ ] The flagThisUninit check at return, and a mutation that reaches it
+- [x] The flagThisUninit check at return, and a mutation that reaches it
       why: it is a false accept, measured: HotSpot answers "Constructor must
       call super() or this() before return" to a class classv says OK to.
       No recipe in the sweep produces that shape, which is why it survived.
+      done: the noinit recipe, 73 mutants, 72 answered, all rejected by both.
+      With the check disabled 31 of 37 in a smaller sample become OK.
 - [x] The JVM oracle harness, both loading paths
       why: this is the headline number and it does not exist yet.
       done: t/Probe.java. 27777 of 27846 module image classes answered
@@ -180,8 +182,8 @@ Ranked by how little of them we control:
 - [x] A mutation corpus aimed at JVMS 4.10.1, one family per rule
       why: a corpus of valid classes can only catch classv rejecting valid
       code. The other direction needs invalid code the JVM rejects.
-      done: t/mutation_sweep.py, 44 recipes over 150 real classes, 2924
-      mutants, 2664 rejected by both sides, 0 false accept, 0 false reject,
+      done: t/mutation_sweep.py, 45 recipes over 150 real classes, 2997
+      mutants, 2736 rejected by both sides, 0 false accept, 0 false reject,
       150 refused and counted apart. The sweep names the recipes that
       produced no mutant and the recipes the JVM accepted every mutant of,
       because either is a recipe that measures nothing.

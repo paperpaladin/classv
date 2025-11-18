@@ -283,6 +283,31 @@ def r_handlertype(c, path, arg):
     return None
 
 
+def r_noinit(c, path, arg):
+    """noinit -- drop the super() call from a constructor, so that this is
+    still uninitialized when the constructor returns."""
+    ms = code_methods(c)
+    for mi, pc, mnem in javap_insns(path):
+        if mnem != 'invokespecial' or mi >= len(ms) or ms[mi].name != '<init>':
+            continue
+        off = ms[mi].code.code_off + pc
+        e = c.pool[c.u2(off + 1)]
+        if not e or e[0] != 10:
+            continue
+        nt = c.pool[c.u2(e[2] + 2)]
+        if c.name_of(c.u2(nt[2])) != '<init>' or c.name_of(c.u2(nt[2] + 2)) != '()V':
+            continue
+        # pop, nop, nop rather than three nops.  The call would have consumed
+        # the uninitializedThis, so popping it keeps the operand stack the
+        # same height everywhere after this point and leaves exactly one rule
+        # broken: the constructor never initialises itself.
+        c.set_u1(off, OPC['pop'])
+        c.set_u1(off + 1, OPC['nop'])
+        c.set_u1(off + 2, OPC['nop'])
+        return 'dropped the superclass constructor call at <init>+%d' % pc
+    return None
+
+
 def r_swapcode(c, path, arg):
     """swapcode -- exchange the first two adjacent one byte instructions."""
     ms = code_methods(c)
@@ -305,6 +330,7 @@ def r_swapcode(c, path, arg):
 
 
 RECIPES = {
+    'noinit': r_noinit,
     'branch': r_branch,
     'iicount': r_iicount,
     'smtitem': r_smtitem,

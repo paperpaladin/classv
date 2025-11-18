@@ -223,16 +223,16 @@ classv refused none of the 7574. The one the JVM has no opinion about is
 `module-info.class`, which is not a class you can ask `Class.forName` for.
 
 A corpus of valid classes can only catch classv rejecting good code, so the
-other direction is a mutation sweep: 44 recipes aimed at the rules of JVMS
+other direction is a mutation sweep: 45 recipes aimed at the rules of JVMS
 4.10.1 and at the structural checks around them, each applied to 150 real
 classes drawn from the image.
 
 ```
---- mutation sweep: 7 agree accept, 2664 agree reject (2382 in the same
+--- mutation sweep: 7 agree accept, 2736 agree reject (2454 in the same
     category), 0 false accept, 0 false reject
 --- mutation sweep: classv refused 150
---- mutation sweep: the JVM had no opinion on 103
---- mutation sweep: 2924 mutants built, 2671 answered about by both
+--- mutation sweep: the JVM had no opinion on 104
+--- mutation sweep: 2997 mutants built, 2743 answered about by both
 ```
 
 Read the refusal line first. All 150 refusals are one recipe, `major:45`,
@@ -243,7 +243,7 @@ output. The 103 the JVM has no opinion on are mutants whose `VerifyError`
 names some other class than the one being asked about, which is the loader
 split described above and not a verdict.
 
-Of the 2664 agreed rejections, 2382 are in the same category: both sides call
+Of the 2736 agreed rejections, 2454 are in the same category: both sides call
 it a verification error, or both call it a malformed file. The remaining 282
 are agreed rejections where one side says `VERIFY` and the other `FORMAT`.
 That is a weaker agreement than the headline, which is why the number is
@@ -255,11 +255,6 @@ Three recipes produced no mutant at all over this sample
 them rather than quietly reporting a smaller corpus.
 
 ## What does not work
-
-**`return` from a constructor that never called `super()`.** classv accepts
-it; HotSpot says `VerifyError: Constructor must call super() or this() before
-return`. The flag is tracked through every frame and the check at `return` is
-a stub.
 
 **The type inference verifier**, JVMS 4.10.2, the pre-Java-6 path with no
 `StackMapTable`. Class file version 49 and below are refused by name. Version

@@ -761,9 +761,15 @@ public final class Verifier {
             case 177:                                                     // return
                 if (returnType != null)
                     throw new Fail(-1, "return in a method returning " + returnType);
-                if (false)
-                    throw new Fail(-1, "return from a constructor that has not called"
-                            + " another constructor: this is still uninitialized");
+                // JVMS 4.10.1.9: returning is type safe only if the frame does
+                // not carry flagThisUninit.  It is the one rule in the whole
+                // table that reads the flag rather than the stack or the
+                // locals, and HotSpot phrases it "Constructor must call
+                // super() or this() before return".
+                if (f.thisUninit)
+                    throw new Fail(-1, "return from " + method.name + method.desc
+                            + ", which has not called another constructor:"
+                            + " this is still uninitialized");
                 return false;
 
             case 178: push(f, fieldType(in.a)); return true;               // getstatic
