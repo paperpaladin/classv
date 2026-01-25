@@ -98,6 +98,12 @@ def main():
         total.false_reject += t.false_reject
         total.missing += t.missing
         total.jvm_other += t.jvm_other
+        total.bci_same += t.bci_same
+        total.bci_target += t.bci_target
+        total.bci_none += t.bci_none
+        total.bci_method += t.bci_method
+        total.bci_frame += t.bci_frame
+        total.bci_diff += t.bci_diff
         for k, v in t.classv_refuse.items():
             total.classv_refuse[k] = total.classv_refuse.get(k, 0) + v
         for k, v in t.oracle_na.items():

@@ -17,6 +17,7 @@ line and never folded into the agreement.
 
 usage: jvm_cmp.py LISTFILE MODE 'CLASSV CMD' 'PROBE CMD'
 """
+import re
 import subprocess
 import sys
 
@@ -61,6 +62,15 @@ class Tally:
         self.oracle_na = {}
         self.jvm_other = 0
         self.missing = 0
+        # Agreeing that a class is bad while pointing at a different
+        # instruction is a much weaker claim than the verdict reads as, so
+        # the bci is compared whenever both sides name one.
+        self.bci_same = 0
+        self.bci_target = 0
+        self.bci_none = 0
+        self.bci_method = 0
+        self.bci_frame = 0
+        self.bci_diff = []
 
     def add(self, path, jvm, cv):
         jk, jm = jvm
@@ -90,6 +100,50 @@ class Tally:
             self.agree_reject += 1
             if jk == ck:
                 self.agree_reject_samecat += 1
+            if jk == 'VERIFY' and ck == 'VERIFY':
+                self.bci(path, jm, cm)
+
+    def bci(self, path, jm, cm):
+        """Do the two sides name the same instruction of the same method?
+
+        HotSpot prints a Location line, "X.f()V @11: goto"; classv prints the
+        same shape.  The method is compared first, because a mutant with more
+        than one broken method is not a disagreement about an instruction: see
+        bci_method below.
+        """
+        j = WHERE.search(jm)
+        c = WHERE.search(cm)
+        if not j or not c:
+            self.bci_none += 1
+        elif j.group(1) != c.group(1):
+            # Not a disagreement.  HotSpot verifies the methods of a class in
+            # the order InstanceKlass holds them, which is sorted by name and
+            # signature, not the order they appear in the file.  A mutation
+            # that breaks every method of a class, max_stack minus one being
+            # the obvious one, therefore gets a different first victim from
+            # each side.  126 of 1698 looked like bci disagreements until the
+            # method was compared, and every one of them was this.
+            self.bci_method += 1
+        elif j.group(2) == c.group(2):
+            self.bci_same += 1
+        elif curframe(jm) == c.group(2):
+            # A bad stack map table is diagnosed before the walk starts, so
+            # HotSpot's Location line says @0 and the instruction it was
+            # really complaining about is in the Current Frame block.  classv
+            # names that one.  Matched against HotSpot's own second field
+            # rather than excused: 54 of 1698 are this, and the bci is exact
+            # in every one of them.
+            self.bci_frame += 1
+        elif j.group(2) in NUM.findall(cm):
+            # A frame merge failure is two instructions: the branch and its
+            # target.  HotSpot names the target, classv names the branch and
+            # says where it was going.  Counted apart rather than folded in,
+            # because "the number appears somewhere in our message" is a
+            # weaker claim than "we named the same instruction".
+            self.bci_target += 1
+        else:
+            self.bci_diff.append('%s: the JVM says @%s, classv says @%s | %s'
+                                 % (path, j.group(2), c.group(2), cm[:150]))
 
     def report(self, label):
         for m in self.false_accept[:10]:
@@ -114,10 +168,37 @@ class Tally:
         if self.jvm_other:
             print('--- %s: of the rejections, %d were a LinkageError that is neither a '
                   'format nor a verification error' % (label, self.jvm_other))
+        n = (self.bci_same + self.bci_target + self.bci_none + self.bci_method
+             + self.bci_frame + len(self.bci_diff))
+        if n:
+            for m in self.bci_diff[:8]:
+                print('      bci %s' % m)
+            print('--- %s: of %d where both report a verification error, %d name the '
+                  'same instruction of the same method, %d match the bci in the JVM\'s '
+                  'Current Frame rather than its Location, %d name the branch whose '
+                  'target the JVM named, %d name a different instruction of that '
+                  'method, %d are a class with more than one broken method where the '
+                  'two sides got to a different one first, %d where one side named '
+                  'no instruction'
+                  % (label, n, self.bci_same, self.bci_frame, self.bci_target,
+                     len(self.bci_diff), self.bci_method, self.bci_none))
 
     @property
     def failures(self):
         return len(self.false_accept) + len(self.false_reject)
+
+
+# "com/sun/crypto/provider/SunJCE.<init>()V @6" -> the method and the bci.
+WHERE = re.compile(r'([\w$/]+\.[\w$<>]+\([^)]*\)\S*)\s+@(\d+)')
+NUM = re.compile(r'\d+')
+# HotSpot prints the frame it was holding as well as the Location, and for a
+# bad stack map table the two are different instructions.
+CURFRAME = re.compile(r'bci: @(\d+)')
+
+
+def curframe(msg):
+    m = CURFRAME.search(msg)
+    return m.group(1) if m else None
 
 
 def first(msg):

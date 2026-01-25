@@ -247,8 +247,35 @@ Of the 2736 agreed rejections, 2454 are in the same category: both sides call
 it a verification error, or both call it a malformed file. The remaining 282
 are agreed rejections where one side says `VERIFY` and the other `FORMAT`.
 That is a weaker agreement than the headline, which is why the number is
-printed. Comparing the *reason* rather than the category is on PLAN.md and is
-not done.
+printed.
+
+### Naming the same instruction
+
+Agreeing that a class is bad while pointing at a different instruction is a
+much weaker claim than the verdict reads as, so wherever both sides report a
+verification error the comparison also reads the bci out of both messages.
+HotSpot prints `Location: X.f()V @11: goto`; classv prints the same shape.
+
+```
+--- mutation sweep: of 1698 where both report a verification error, 1553 name
+    the same instruction of the same method, 63 match the bci in the JVM's
+    Current Frame rather than its Location, 0 name the branch whose target
+    the JVM named, 3 name a different instruction of that method, 79 are a
+    class with more than one broken method where the two sides got to a
+    different one first, 0 where one side named no instruction
+```
+
+The 79 are not a disagreement. HotSpot verifies the methods of a class in the
+order `InstanceKlass` holds them, which is sorted by name and signature and
+not the order they appear in the file, so a mutation that breaks every method
+of a class gets a different first victim from each side. 126 of 1698 looked
+like bci disagreements until the method name was compared as well.
+
+The 63 are the stack map table errors, where HotSpot's `Location:` line says
+`@0` because the table is read before the walk starts, and the instruction it
+is really complaining about appears in its `Current Frame:` block instead.
+classv names that one, and it is matched against HotSpot's own second field
+rather than waved through: the bci is exact in all 63.
 
 Three recipes produced no mutant at all over this sample
 (`subst:ladd:iadd`, `subst:pop2:pop`, `subst:nop:pop`), and the sweep names

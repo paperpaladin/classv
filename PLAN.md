@@ -203,12 +203,28 @@ Ranked by how little of them we control:
 
 ### Milestone 3: the error message, which is the point
 
+- [ ] Blame the instruction being executed, not the handler target
+      why: the bci comparison found it. For a handler whose target has no
+      declared frame, classv names the target and HotSpot names the
+      instruction inside the protected range, which is the convention
+      everything else in both tools follows.
+- [ ] The putfield rule HotSpot actually implements
+      why: also from the bci comparison. JVMS 4.10.1.9 allows putfield on
+      uninitializedThis when the Fieldref names the current class; HotSpot
+      additionally requires the field to be DECLARED in the current class,
+      and rejects an inherited field reached through a Fieldref that names
+      the subclass. Two three-line classes show the difference.
 - [ ] Report the failing instruction, the frame at it, and the rule it broke
       why: "Bad type on operand stack" with no further explanation is the
       reason this program is worth writing.
-- [ ] Compare the reported bci against the bci in the JVM's own message
+- [x] Compare the reported bci against the bci in the JVM's own message
       why: the JVM prints `Location: A.f()I @2: ireturn`, so the claim
       "we name the same instruction" has an oracle and should be measured.
+      done: over the mutation sweep, 1553 of 1698 name the same instruction
+      of the same method, 63 match the bci in HotSpot's Current Frame block
+      instead of its Location line, 79 are classes with several broken
+      methods where HotSpot's sorted method order picks a different one,
+      and 3 are real divergences, which are the next two items.
 - [ ] Print the merge that failed, not just the frame
       why: a frame mismatch at a branch target is two frames and a target,
       and printing one of the three is the current state of the art.
