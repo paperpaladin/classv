@@ -257,10 +257,10 @@ verification error the comparison also reads the bci out of both messages.
 HotSpot prints `Location: X.f()V @11: goto`; classv prints the same shape.
 
 ```
---- mutation sweep: of 1698 where both report a verification error, 1553 name
-    the same instruction of the same method, 63 match the bci in the JVM's
+--- mutation sweep: of 1698 where both report a verification error, 1554 name
+    the same instruction of the same method, 64 match the bci in the JVM's
     Current Frame rather than its Location, 0 name the branch whose target
-    the JVM named, 3 name a different instruction of that method, 79 are a
+    the JVM named, 1 names a different instruction of that method, 79 are a
     class with more than one broken method where the two sides got to a
     different one first, 0 where one side named no instruction
 ```
@@ -271,11 +271,14 @@ not the order they appear in the file, so a mutation that breaks every method
 of a class gets a different first victim from each side. 126 of 1698 looked
 like bci disagreements until the method name was compared as well.
 
-The 63 are the stack map table errors, where HotSpot's `Location:` line says
+The 64 are the stack map table errors, where HotSpot's `Location:` line says
 `@0` because the table is read before the walk starts, and the instruction it
 is really complaining about appears in its `Current Frame:` block instead.
 classv names that one, and it is matched against HotSpot's own second field
-rather than waved through: the bci is exact in all 63.
+rather than waved through: the bci is exact in all 64.
+
+The one left is the `putfield` divergence described under what does not
+work.
 
 Three recipes produced no mutant at all over this sample
 (`subst:ladd:iadd`, `subst:pop2:pop`, `subst:nop:pop`), and the sweep names

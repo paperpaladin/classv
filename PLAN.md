@@ -203,11 +203,13 @@ Ranked by how little of them we control:
 
 ### Milestone 3: the error message, which is the point
 
-- [ ] Blame the instruction being executed, not the handler target
+- [x] Blame the instruction being executed, not the handler target
       why: the bci comparison found it. For a handler whose target has no
       declared frame, classv names the target and HotSpot names the
       instruction inside the protected range, which is the convention
       everything else in both tools follows.
+      done: the two divergences are gone, 1554 of 1698 now name the same
+      instruction and 64 match HotSpot's Current Frame bci.
 - [ ] The putfield rule HotSpot actually implements
       why: also from the bci comparison. JVMS 4.10.1.9 allows putfield on
       uninitializedThis when the Fieldref names the current class; HotSpot

@@ -363,8 +363,14 @@ public final class Verifier {
             if (pc < hd.start || pc >= hd.end) continue;
             Frame target = mapFrames.get(hd.handler);
             if (target == null)
-                throw new Fail(hd.handler, "no stack map frame is declared at exception"
-                        + " handler target " + hd.handler);
+                // The bci is the instruction being executed, not the handler
+                // target, because the instruction is what the frame belongs
+                // to and because it is the convention HotSpot's Location
+                // line follows.  Naming the target instead was a disagreement
+                // with the JVM about 2 of 1698 mutants.
+                throw new Fail(pc, "no stack map frame is declared at the exception"
+                        + " handler target " + hd.handler + ", which this instruction"
+                        + " can reach");
             Frame exc = new Frame();
             exc.locals = cur.locals;
             exc.stack = new VType[maxStack + 2];
