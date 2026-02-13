@@ -1,0 +1,29 @@
+// Two constructors that differ in one thing: whether the field they assign
+// to is declared in the class doing the assigning.  Both assign through a
+// Fieldref naming the class itself, which is what javac emits for an
+// inherited field as well as for an own one.
+//
+// With the superclass constructor call removed, the assignment happens on an
+// uninitializedThis, and HotSpot accepts one and rejects the other.  JVMS
+// 4.10.1.9's second putfield rule asks only that the Fieldref name the
+// current class, so the spec as written accepts both.
+public class Pair {
+}
+
+class Base {
+    int m;
+}
+
+class Sub extends Base {
+    Sub() {
+        m = 1;
+    }
+}
+
+class Own {
+    int z;
+
+    Own() {
+        z = 1;
+    }
+}

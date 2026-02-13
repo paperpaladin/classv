@@ -257,10 +257,10 @@ verification error the comparison also reads the bci out of both messages.
 HotSpot prints `Location: X.f()V @11: goto`; classv prints the same shape.
 
 ```
---- mutation sweep: of 1698 where both report a verification error, 1554 name
-    the same instruction of the same method, 64 match the bci in the JVM's
+--- mutation sweep: of 1698 where both report a verification error, 1556 name
+    the same instruction of the same method, 63 match the bci in the JVM's
     Current Frame rather than its Location, 0 name the branch whose target
-    the JVM named, 1 names a different instruction of that method, 79 are a
+    the JVM named, 0 name a different instruction of that method, 79 are a
     class with more than one broken method where the two sides got to a
     different one first, 0 where one side named no instruction
 ```
@@ -271,14 +271,27 @@ not the order they appear in the file, so a mutation that breaks every method
 of a class gets a different first victim from each side. 126 of 1698 looked
 like bci disagreements until the method name was compared as well.
 
-The 64 are the stack map table errors, where HotSpot's `Location:` line says
+The 63 are the stack map table errors, where HotSpot's `Location:` line says
 `@0` because the table is read before the walk starts, and the instruction it
 is really complaining about appears in its `Current Frame:` block instead.
 classv names that one, and it is matched against HotSpot's own second field
-rather than waved through: the bci is exact in all 64.
+rather than waved through: the bci is exact in all 63.
 
-The one left is the `putfield` divergence described under what does not
-work.
+### Where HotSpot is stricter than the spec
+
+The bci comparison found one place where following JVMS 4.10.1.9 to the
+letter makes classv accept what HotSpot rejects. The spec's second `putfield`
+rule allows the objectref to be `uninitializedThis` when the Fieldref names
+the current class. HotSpot calls `find_local_field`, so it also requires the
+field to be *declared* in the current class.
+
+`t/fixtures/Uninit.java` is the difference in two classes. `Own` declares
+`int v`; `Sub` inherits `int m` from `Base`; both constructors assign to
+their field through a Fieldref naming their own class, which is what javac
+emits. With the superclass constructor call dropped from each, HotSpot
+rejects `Sub` at the `putfield` and gets as far as the `return` on `Own`.
+classv matches HotSpot, bci included, and the suite checks that against
+HotSpot's answer rather than against a recorded string.
 
 Three recipes produced no mutant at all over this sample
 (`subst:ladd:iadd`, `subst:pop2:pop`, `subst:nop:pop`), and the sweep names

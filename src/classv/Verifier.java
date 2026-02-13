@@ -797,7 +797,8 @@ public final class Verifier {
                 // being verified.  3415 of java.base's 7574 classes failed
                 // without it.
                 if (f.sp > 0 && f.stack[f.sp - 1] == VType.UNINIT_THIS
-                        && owner.equals(cf.thisClass)) {
+                        && owner.equals(cf.thisClass)
+                        && declaresField(cf.pool.refName(in.a), cf.pool.refDesc(in.a))) {
                     f.sp--;
                 } else {
                     pop(f, VType.object(owner));
@@ -937,6 +938,20 @@ public final class Verifier {
                     + (cf.pool.valid(idx) ? ConstantPool.tagName(cf.pool.tag(idx))
                                           : "out of range or unusable")
                     + " where " + ConstantPool.tagName(tag) + " is required");
+    }
+
+    /**
+     * Does this class file itself declare the field, as opposed to inheriting
+     * it?  JVMS 4.10.1.9's second putfield rule asks only that the Fieldref
+     * name the current class, and HotSpot asks for more than that: its
+     * find_local_field call means an inherited field reached through a
+     * Fieldref naming the subclass is rejected on an uninitializedThis.
+     * Measured on two three line classes, and the README has them.
+     */
+    private boolean declaresField(String name, String desc) {
+        for (ClassFile.Member f : cf.fields)
+            if (f.name.equals(name) && f.desc.equals(desc)) return true;
+        return false;
     }
 
     private VType fieldType(int idx) throws Fail, ClassFormatException {

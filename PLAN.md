@@ -210,12 +210,14 @@ Ranked by how little of them we control:
       everything else in both tools follows.
       done: the two divergences are gone, 1554 of 1698 now name the same
       instruction and 64 match HotSpot's Current Frame bci.
-- [ ] The putfield rule HotSpot actually implements
+- [x] The putfield rule HotSpot actually implements
       why: also from the bci comparison. JVMS 4.10.1.9 allows putfield on
       uninitializedThis when the Fieldref names the current class; HotSpot
       additionally requires the field to be DECLARED in the current class,
       and rejects an inherited field reached through a Fieldref that names
       the subclass. Two three-line classes show the difference.
+      done: t/fixtures/Uninit.java, checked against HotSpot's own answer
+      including the bci. The sweep's bci divergences are now 0 of 1698.
 - [ ] Report the failing instruction, the frame at it, and the rule it broke
       why: "Bad type on operand stack" with no further explanation is the
       reason this program is worth writing.

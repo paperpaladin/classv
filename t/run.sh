@@ -87,7 +87,7 @@ javac -d "$work/fix" "$here/fixtures/Fix.java" 2>&1 || { echo "cannot build Fix"
 FIX=$work/fix/Fix.class
 probe_one() {
 	echo "$1" > "$work/one.txt"
-	$PROBE define "$work/one.txt" 2>/dev/null | head -1
+	$PROBE define "$work/one.txt" "${2:-}" 2>/dev/null | head -1
 }
 v=$(probe_one "$FIX" | cut -f1)
 if [ "$v" = ACCEPT ]; then
@@ -134,6 +134,31 @@ plant truncate:1             FORMAT
 plant major:99               FORMAT
 plant major:45               FORMAT
 plant superself              OTHER
+
+# The putfield rule for an uninitialized this.  Two classes that differ only
+# in whether the field is declared locally or inherited, with the superclass
+# constructor call removed from each: HotSpot rejects the inherited one at
+# the putfield and gets as far as the return on the local one.  The letter of
+# JVMS 4.10.1.9 allows both.  The check is that classv says what HotSpot
+# says, instruction included, rather than what the spec says.
+javac -d "$work/uninit" "$here/fixtures/Uninit.java" 2>&1 || { echo "cannot build Uninit"; exit 2; }
+for pair in "Sub putfield" "Own return"; do
+	cls=${pair% *}; want=${pair#* }
+	python3 "$here/mutate.py" noinit "$work/uninit/$cls.class" "$work/u.class" >/dev/null 		|| { bad "noinit does not apply to $cls"; continue; }
+	jvm=$(probe_one "$work/u.class" "$work/uninit")
+	bci=$(printf '%s' "$jvm" | sed -n 's/.*@\([0-9]*\): *'"$want"'.*/\1/p')
+	if [ -z "$bci" ]; then
+		bad "the JVM did not blame a $want in $cls: $(printf '%s' "$jvm" | cut -c1-160)"
+		continue
+	fi
+	ours=$(java -cp "$root/build" classv.Main --verify "$work/u.class" 2>&1)
+	case $ours in
+	VERIFY*"@$bci: $want"*)
+		ok "classv and the JVM both blame the $want at @$bci of $cls.<init>" ;;
+	*)
+		bad "the JVM blames the $want at @$bci of $cls.<init>, classv says $(printf '%s' "$ours" | cut -c1-160)" ;;
+	esac
+done
 
 # -Xverify:all is load bearing, and this is the only place that says so.
 # Without it a class loaded by the boot loader is not verified at all
