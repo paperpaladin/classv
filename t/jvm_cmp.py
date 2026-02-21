@@ -142,6 +142,8 @@ class Tally:
             # weaker claim than "we named the same instruction".
             self.bci_target += 1
         else:
+            # A failure, not a note.  The three this found when it was first
+            # written are all fixed, so the next one is news.
             self.bci_diff.append('%s: the JVM says @%s, classv says @%s | %s'
                                  % (path, j.group(2), c.group(2), cm[:150]))
 
@@ -172,7 +174,7 @@ class Tally:
              + self.bci_frame + len(self.bci_diff))
         if n:
             for m in self.bci_diff[:8]:
-                print('      bci %s' % m)
+                print('FAIL bci %s' % m)
             print('--- %s: of %d where both report a verification error, %d name the '
                   'same instruction of the same method, %d match the bci in the JVM\'s '
                   'Current Frame rather than its Location, %d name the branch whose '
@@ -185,7 +187,7 @@ class Tally:
 
     @property
     def failures(self):
-        return len(self.false_accept) + len(self.false_reject)
+        return len(self.false_accept) + len(self.false_reject) + len(self.bci_diff)
 
 
 # "com/sun/crypto/provider/SunJCE.<init>()V @6" -> the method and the bci.

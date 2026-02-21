@@ -120,6 +120,14 @@ def main():
     print('--- mutation sweep: %d mutants built, %d answered about by both'
           % (made_any, n + total.failures))
     bad = total.failures
+    if total.bci_same < 100:
+        # The instruction comparison is the part of this sweep that can go
+        # quiet without the verdict numbers moving at all: every mutant could
+        # still be rejected by both sides while the two messages stopped
+        # being comparable.
+        print('FAIL the instruction comparison is vacuous: only %d mutants had '
+              'their bci compared' % total.bci_same)
+        bad += 1
     if total.agree_reject < 100:
         print('FAIL the sweep is vacuous: the JVM rejected only %d mutants'
               % total.agree_reject)
