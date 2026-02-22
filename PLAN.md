@@ -190,9 +190,13 @@ Ranked by how little of them we control:
 - [ ] Compare the *reason* and not only the verdict
       why: agreeing that a class is bad while disagreeing about which
       instruction is bad is a much weaker claim than it reads as.
-- [ ] A corpus from `javac --release 8..21`, `-g` and `-g:none`
+- [x] A corpus from `javac --release 8..21`, `-g` and `-g:none`
       why: the JDK image is one compiler at one release. Say what the corpus
       actually contains.
+      done: t/fixtures/Shapes.java at releases 8, 11, 17 and 21, each with
+      -g and -g:none, both oracles on each. It also measures how little
+      that buys: the disassembly at 11, 17 and 21 is identical, so the
+      corpus has two shapes and not four.
 - [ ] Classes with no StackMapTable (`--release 6`) refused by name
       why: an unimplemented path must fail loudly, and `javac` can still
       produce them.

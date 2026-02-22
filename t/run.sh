@@ -232,6 +232,47 @@ f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
 pass=$((pass + p))
 fail=$((fail + f))
 
+# ------------- oracle 4b: javac at four releases, with and without debug info
+#
+# The module image is one compiler at one release, which reaches a narrow set
+# of the legal shapes.  The same source compiled at --release 8 and at 21 is
+# two different class files: string concatenation alone moves from
+# StringBuilder to an invokedynamic against StringConcatFactory.  Both the
+# parse and the verdict are compared on each.
+echo
+echo "--- oracle 4b: javac --release 8, 11, 17, 21, with -g and -g:none"
+for rel in 8 11 17 21; do
+	for g in -g -g:none; do
+		tag="$rel$(printf '%s' "$g" | tr -d ':-')"
+		dir="$work/javac/$tag"
+		mkdir -p "$dir"
+		if ! javac --release "$rel" "$g" -d "$dir" "$here/fixtures/Shapes.java" \
+				2>"$work/javac.err"; then
+			bad "javac --release $rel $g cannot compile the Shapes fixture: $(head -2 "$work/javac.err")"
+			continue
+		fi
+		find "$dir" -name '*.class' | sort > "$work/javac/$tag.txt"
+		n=$(wc -l < "$work/javac/$tag.txt")
+		[ "$n" -ge 5 ] || { bad "release $rel $g produced $n class files"; continue; }
+		out=$(python3 "$here/javap_cmp.py" "$CLASSV" "$work/javac/$tag.txt" 100)
+		printf '%s\n' "$out" | grep -v '^JAVAP_' | sed "s/^--- /--- release $rel $g: /"
+		p=$(printf '%s\n' "$out" | sed -n 's/^JAVAP_PASS //p')
+		f=$(printf '%s\n' "$out" | sed -n 's/^JAVAP_FAIL //p')
+		[ -n "$p" ] || { bad "javap_cmp.py produced no count for release $rel $g"; continue; }
+		pass=$((pass + p))
+		fail=$((fail + f))
+		out=$(python3 "$here/jvm_cmp.py" "$work/javac/$tag.txt" define \
+			"java -cp $root/build classv.Main --cp $dir" \
+			"java -cp $work/probe Probe")
+		printf '%s\n' "$out" | grep -v '^JVM_' | sed "s/^--- the JVM vs classv/--- release $rel $g/"
+		p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
+		f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
+		[ -n "$p" ] || { bad "jvm_cmp.py produced no count for release $rel $g"; continue; }
+		pass=$((pass + p))
+		fail=$((fail + f))
+	done
+done
+
 # ------------------------------------------- oracle 5: the mutation sweep
 #
 # A corpus of valid classes can only catch classv rejecting something the JVM

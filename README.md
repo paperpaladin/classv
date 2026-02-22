@@ -277,6 +277,24 @@ is really complaining about appears in its `Current Frame:` block instead.
 classv names that one, and it is matched against HotSpot's own second field
 rather than waved through: the bci is exact in all 63.
 
+### The same source at four releases
+
+`t/fixtures/Shapes.java` exists to make javac emit as many shapes as it can
+be persuaded to: a tableswitch and a lookupswitch and a switch on a string
+and a switch on an enum, lambdas and a method reference, try-with-resources,
+a multi catch, nested finally, a synchronized block, two word locals, a
+multianewarray, an inner class capturing its outer instance, an anonymous
+class, varargs, a labelled break. It is compiled at `--release` 8, 11, 17
+and 21, each with `-g` and `-g:none`, and both oracles run on all eight
+corpora: javap on the parse, the JVM on the verdict.
+
+What that is worth, measured rather than claimed: the disassembly at 11, 17
+and 21 is identical for this source, so the corpus has two shapes and not
+four. Release 8 is the one that differs, by 1485 lines of javap output, and
+almost all of it is string concatenation moving from `StringBuilder` to an
+`invokedynamic` against `StringConcatFactory`: 691 instructions at 8 against
+643 at 11 and up. `-g:none` changes the Utf8 count and nothing else.
+
 ### Where HotSpot is stricter than the spec
 
 The bci comparison found one place where following JVMS 4.10.1.9 to the
@@ -324,10 +342,12 @@ invisible.
 throws nothing but `ClassFormatException`" is an intention and not a
 measurement.
 
-**One compiler.** Every class in the corpus came out of the javac that built
-the JDK image. `javac --release 8` through 21 is on PLAN.md and is not wired
-in yet, and Kotlin, Scala and ecj are not installed on this machine, so the
-variety of stack map shapes here is narrower than the format allows.
+**Almost one compiler.** Everything measured here came out of javac, and
+nearly all of it out of the one javac that built this machine's JDK image.
+Kotlin, Scala and ecj are not installed, so the variety of stack map shapes
+is narrower than the format allows. `t/fixtures/Shapes.java` is compiled at
+four `--release` levels to widen it, and the honest measurement of how much
+that widens it is in the next section: not as much as four sounds.
 
 ## License
 
