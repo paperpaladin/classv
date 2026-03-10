@@ -59,6 +59,7 @@ class Tally:
         self.false_reject = []
         self.false_accept = []
         self.classv_refuse = {}
+        self.refused_jvm = {}
         self.oracle_na = {}
         self.jvm_other = 0
         self.missing = 0
@@ -80,6 +81,10 @@ class Tally:
             return
         if ck == 'REFUSE':
             self.classv_refuse[first(cm)] = self.classv_refuse.get(first(cm), 0) + 1
+            # What the JVM thought of the files classv declined to look at.
+            # A refusal over files the JVM also cannot accept would be a much
+            # smaller claim than a refusal over files it accepts happily.
+            self.refused_jvm[jk] = self.refused_jvm.get(jk, 0) + 1
             return
         if jk == 'OTHER':
             # A LinkageError about this class that is neither a format nor a
@@ -162,6 +167,10 @@ class Tally:
             print('--- %s: classv refused %d' % (label, tot))
             for k, v in sorted(self.classv_refuse.items(), key=lambda x: -x[1])[:6]:
                 print('      %6d  %s' % (v, k))
+        if self.classv_refuse:
+            print('--- %s: of the refused, the JVM said %s'
+                  % (label, ', '.join('%s %d' % (k, v)
+                                      for k, v in sorted(self.refused_jvm.items()))))
         if self.oracle_na:
             tot = sum(self.oracle_na.values())
             print('--- %s: the JVM had no opinion on %d' % (label, tot))
@@ -231,8 +240,31 @@ def main():
     if len(sys.argv) < 5:
         sys.exit(__doc__)
     listfile, mode, classv_cmd, probe_cmd = sys.argv[1:5]
-    t, jr, cr = compare(listfile, mode, classv_cmd, probe_cmd)
+    expect_refuse = len(sys.argv) > 5 and sys.argv[5] == 'refuse'
+    roots = sys.argv[6] if len(sys.argv) > 6 else ''
+    t, jr, cr = compare(listfile, mode, classv_cmd, probe_cmd, roots=roots)
     t.report('the JVM vs classv')
+    if expect_refuse:
+        # The corpus is one classv is supposed to decline, so the thing being
+        # measured is that it declines every one of them AND that the JVM
+        # accepts them anyway.  A missing feature does not announce itself by
+        # a missing error message; it announces itself by a confident wrong
+        # answer, so an answer here is the failure.
+        answered = t.agree_accept + t.agree_reject + t.failures
+        refused = sum(t.classv_refuse.values())
+        ok_refusals = t.refused_jvm.get('ACCEPT', 0)
+        bad = 0
+        if answered:
+            print('FAIL classv answered about %d class files it has no algorithm for'
+                  % answered)
+            bad += 1
+        if ok_refusals < 100:
+            print('FAIL only %d refusals of class files the JVM accepts; too few to '
+                  'measure a refusal' % ok_refusals)
+            bad += 1
+        print('JVM_PASS %d' % refused)
+        print('JVM_FAIL %d' % bad)
+        sys.exit(1 if bad else 0)
     if t.missing:
         print('FAIL %d class files got no answer from one side or the other' % t.missing)
     n = t.agree_accept + t.agree_reject

@@ -197,13 +197,19 @@ Ranked by how little of them we control:
       -g and -g:none, both oracles on each. It also measures how little
       that buys: the disassembly at 11, 17 and 21 is identical, so the
       corpus has two shapes and not four.
-- [ ] Classes with no StackMapTable (`--release 6`) refused by name
-      why: an unimplemented path must fail loudly, and `javac` can still
-      produce them.
+- [x] Classes with no StackMapTable refused by name
+      why: an unimplemented path must fail loudly. javac 21 cannot produce
+      one (its oldest --release is 8), so the corpus had to be real files.
+      done: 4603 class files of major version 48 and 49 out of jars on this
+      machine, every one refused by classv and accepted by the JVM. The
+      refusal is measured against the JVM's acceptance, so a refusal
+      covering up a rejection would fail.
 - [ ] A non-javac corpus
       why: every class in the JDK image came out of one compiler's backend,
       which reaches a narrow set of the legal shapes. Kotlin, Scala and ecj
       are not installed; say so rather than claim variety that is not there.
+      The jar corpus is a different javac and a different decade, which is
+      not the same thing as a different compiler.
 
 ### Milestone 3: the error message, which is the point
 
@@ -249,9 +255,12 @@ Ranked by how little of them we control:
 - [ ] Verify the `Exceptions`, `BootstrapMethods` and `Record` attributes
       why: they are parsed as opaque bytes today, so a length error in one
       is invisible until it is not.
-- [ ] `--release 6` and older real classes from installed jars
+- [x] Older real classes from installed jars
       why: the inference path classes exist in the wild and the refusal
       needs to be measured against real ones, not synthesised ones.
+      done: t/jars.py and oracle 4c. Also 640 class files of version 52 and
+      65 from the same jars, which is real code this JDK did not build:
+      637 accepted by both sides, 3 the JVM has no opinion on.
 - [ ] A second JDK's module image as corpus
       why: there is a JDK 25 image on this machine with class file version
       69 in it, which is a different shape from anything javac 21 emits.

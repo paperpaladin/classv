@@ -295,6 +295,36 @@ almost all of it is string concatenation moving from `StringBuilder` to an
 `invokedynamic` against `StringConcatFactory`: 691 instructions at 8 against
 643 at 11 and up. `-g:none` changes the Utf8 count and nothing else.
 
+### Class files this JDK did not build
+
+`t/jars.py` unpacks every jar it can find under `$HOME/.cache`,
+`/usr/share/java` and `/run/host/usr/share/java` and splits the class files
+by major version. On this machine that is 5243 files: 288 at version 48,
+4315 at 49, 637 at 52 and 3 at 65. The counts depend on what is installed,
+and the suite prints `SKIP` rather than inventing a corpus when there are no
+jars.
+
+Below major version 50 there is no `StackMapTable`, so the JVM type-infers
+the frames and classv refuses by name. The refusal is the thing being
+measured there, and a refusal needs an outside authority as much as an
+answer does: the suite requires the JVM to **accept** all of them, so a
+refusal that was quietly covering up a disagreement would fail.
+
+```
+--- 4603 old class files
+--- jars, old: classv refused 4581
+--- jars, old: of the refused, the JVM said ACCEPT 4581
+--- jars, old: the JVM had no opinion on 22
+```
+
+The 22 are missing dependencies: `org/apache/commons/logging/Log` and
+similar, libraries that are not installed here.
+
+Above 50 they are ordinary class files and get the ordinary comparison: 637
+of 640 accepted by both sides, 3 the JVM has no opinion on. One of those is
+a class whose dependency is absent, and classv refuses that one naming the
+same missing type the JVM's `NoClassDefFoundError` names.
+
 ### Where HotSpot is stricter than the spec
 
 The bci comparison found one place where following JVMS 4.10.1.9 to the

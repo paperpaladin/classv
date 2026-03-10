@@ -273,6 +273,50 @@ for rel in 8 11 17 21; do
 	done
 done
 
+# ------------- oracle 4c: real class files from jars this JDK did not build
+#
+# Everything above came out of the javac on this machine.  An old jar is a
+# class file from a compiler nobody here has, and the ones below major 50
+# have no StackMapTable at all, which is the path classv refuses by name.
+# A refusal needs an outside authority too: the JVM must accept these files
+# happily, or the refusal would be hiding a rejection.
+echo
+echo "--- oracle 4c: jars"
+JARS=${CLASSV_JARS:-$(find "$HOME/.cache" /usr/share/java /run/host/usr/share/java \
+	-name '*.jar' 2>/dev/null | grep -v sources | head -40)}
+if [ -z "$JARS" ]; then
+	echo "SKIP no jars on this machine; the jar corpus is one oracle among several"
+else
+	mkdir -p "$work/jars"
+	# shellcheck disable=SC2086
+	python3 "$here/jars.py" "$work/jars" $JARS
+	JCP=""
+	JROOTS=""
+	for jd in "$work"/jars/j*/; do
+		JCP="$JCP --cp $jd"
+		JROOTS="$JROOTS:${jd%/}"
+	done
+	JROOTS=${JROOTS#:}
+	for part in old new; do
+		n=$(wc -l < "$work/jars/$part.txt")
+		if [ "$n" -lt 50 ]; then
+			echo "SKIP only $n $part class files in the jar corpus"
+			continue
+		fi
+		echo "--- $n $part class files"
+		out=$(python3 "$here/jvm_cmp.py" "$work/jars/$part.txt" define \
+			"java -cp $root/build classv.Main $JCP" \
+			"java -cp $work/probe Probe" \
+			"$([ "$part" = old ] && echo refuse || echo verdict)" "$JROOTS")
+		printf '%s\n' "$out" | grep -v '^JVM_' | sed "s/^--- the JVM vs classv/--- jars, $part/"
+		p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
+		f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
+		[ -n "$p" ] || { bad "jvm_cmp.py produced no count for the $part jar corpus"; continue; }
+		pass=$((pass + p))
+		fail=$((fail + f))
+	done
+fi
+
 # ------------------------------------------- oracle 5: the mutation sweep
 #
 # A corpus of valid classes can only catch classv rejecting something the JVM
