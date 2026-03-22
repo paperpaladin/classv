@@ -325,6 +325,26 @@ of 640 accepted by both sides, 3 the JVM has no opinion on. One of those is
 a class whose dependency is absent, and classv refuses that one naming the
 same missing type the JVM's `NoClassDefFoundError` names.
 
+### Corruption, where there is no oracle
+
+`t/fuzz.py` truncates, flips a bit, replaces a byte, scribbles over a short
+run of bytes, or deletes a few bytes, in real class files, and requires
+classv to answer in its own vocabulary: one status word per file, nothing on
+stderr, no Java exception escaping the parser. There is no outside authority
+for that and it does not need one, because the property is about classv's
+behaviour and not about the verdict. For a scrambled file there is often no
+right verdict to have.
+
+2000 mutants per run from a fixed seed, and 8000 across two seeds by hand:
+no escape. That is a negative result and it is reported as one. The sweep
+was watched going red first, with the cursor's bounds check replaced by
+`if (false)`: it names the mutant, prints the stack trace, and the run ends
+`FUZZ_FAIL 2`.
+
+The digest printed is of the mutant bytes rather than of the report about
+them, so a seed that had stopped being used would show as the same digest
+for every seed.
+
 ### Where HotSpot is stricter than the spec
 
 The bci comparison found one place where following JVMS 4.10.1.9 to the
@@ -368,9 +388,11 @@ accepted.
 `Record`, and the annotation attributes. A length error inside one is
 invisible.
 
-**No truncation or corruption sweep over the whole file**, so "the parser
-throws nothing but `ClassFormatException`" is an intention and not a
-measurement.
+**A crash is still indistinguishable from a rejection by exit status.** An
+exception escaping the parser would exit 1, which is also what a rejected
+class exits with, and it ends the whole batch rather than that one file.
+The fuzz sweep catches it by reading stdout and stderr; the exit status does
+not.
 
 **Almost one compiler.** Everything measured here came out of javac, and
 nearly all of it out of the one javac that built this machine's JDK image.

@@ -353,6 +353,27 @@ f=$(printf '%s\n' "$out" | sed -n 's/^MUT_FAIL //p')
 pass=$((pass + p))
 fail=$((fail + f))
 
+# ------------------------------------- oracle 6: random corruption, no oracle
+#
+# There is no outside authority for this one and it does not need one: the
+# property is about classv's own behaviour, not about the verdict.  A class
+# file is attacker controlled input in any tool that reads one from a
+# stranger, and the claim is that a scrambled one produces a status word and
+# not a stack trace.  The seed is fixed so that a failure can be reproduced;
+# the digest printed is of the mutant bytes, so a seed that stopped being
+# used would show.
+echo
+echo "--- oracle 6: random corruption"
+awk 'NR % 19 == 1' "$work/corpus.txt" | head -400 > "$work/fuzzsrc.txt"
+out=$(python3 "$here/fuzz.py" "java -cp $root/build classv.Main" "$work/fuzzsrc.txt" \
+	"${CLASSV_FUZZ_N:-2000}" "${CLASSV_FUZZ_SEED:-1}" "$work/fuzz")
+echo "$out" | grep -v '^FUZZ_'
+p=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_PASS //p')
+f=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_FAIL //p')
+[ -n "$p" ] || { echo "fuzz.py produced no count"; exit 2; }
+pass=$((pass + p))
+fail=$((fail + f))
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

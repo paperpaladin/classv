@@ -245,10 +245,13 @@ Ranked by how little of them we control:
 
 ### Milestone 4: the parts that are still soft
 
-- [ ] Truncation and corruption sweeps over the whole file
+- [x] Truncation and corruption sweeps over the whole file
       why: a class file is attacker controlled input in any tool that reads
       one from a stranger, and "no exception escaped" is a claim with a
       cheap test.
+      done: t/fuzz.py, five kinds of corruption, 2000 mutants per run and
+      8000 across two seeds by hand, no escape. Watched going red with the
+      cursor's bounds check disabled.
 - [ ] Never throw anything but our own exception types
       why: an ArrayIndexOutOfBoundsException escaping the parser is a bug
       report, not a diagnosis.
