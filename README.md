@@ -27,8 +27,10 @@ takes one path per line, because the corpus is 27846 files and that does not
 fit in argv.
 
 Exit status: 0 accepted, 1 rejected by the type checker, 2 usage, 3 classv
-refused to analyse the file, 4 the file is not a well formed class file.
-Three and one are deliberately different numbers.
+refused to analyse the file, 4 the file is not a well formed class file, 5 a
+defect in classv itself. Three and one are deliberately different numbers,
+and so are five and one: a crash that exits 1 is a crash a harness counts as
+a correct rejection.
 
 ## Why this exists
 
@@ -388,11 +390,11 @@ accepted.
 `Record`, and the annotation attributes. A length error inside one is
 invisible.
 
-**A crash is still indistinguishable from a rejection by exit status.** An
-exception escaping the parser would exit 1, which is also what a rejected
-class exits with, and it ends the whole batch rather than that one file.
-The fuzz sweep catches it by reading stdout and stderr; the exit status does
-not.
+**A crash is a result classv prints, not a path it is known not to have.**
+Anything that escapes the analysis of one file is caught, printed as
+`INTERNAL` with the classv source line it came through, given exit status 5,
+and the run carries on to the next file. Zero over 8000 random mutants and
+the whole corpus, which is a measurement of this corpus and not a proof.
 
 **Almost one compiler.** Everything measured here came out of javac, and
 nearly all of it out of the one javac that built this machine's JDK image.

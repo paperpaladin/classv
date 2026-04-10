@@ -21,7 +21,7 @@ import random
 import subprocess
 import sys
 
-WORDS = ('OK', 'VERIFY', 'FORMAT', 'REFUSE')
+WORDS = ('OK', 'VERIFY', 'FORMAT', 'REFUSE', 'INTERNAL')
 
 
 def corrupt(rng, data):
@@ -98,6 +98,12 @@ def main():
     missing = [p for p in paths if p not in verdicts]
     if r.stderr.strip():
         print('FAIL fuzz: classv wrote to stderr: %s' % r.stderr.strip()[:300])
+        bad += 1
+    internal = sorted(p for p, w in verdicts.items() if w == 'INTERNAL')
+    if internal:
+        print('FAIL fuzz: %d files produced an INTERNAL answer, which is a defect in '
+              'classv and never a verdict; first %s (%s)'
+              % (len(internal), internal[0], why[internal[0]]))
         bad += 1
     if r.returncode not in (0, 1, 3, 4):
         print('FAIL fuzz: classv exited %d over the batch' % r.returncode)

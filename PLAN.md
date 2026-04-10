@@ -20,7 +20,12 @@ Exit status, all distinct so that a harness can never fold two of them together:
 2  usage error
 3  classv refuses to analyse it                                      "REFUSE"
 4  the file is not a well formed class file                          "FORMAT"
+5  a defect in classv itself                                      "INTERNAL"
 ```
+
+5 exists because without it a crash exits 1, which is the status for a class
+the type checker rejects. A harness that folded those two together would
+count a stack trace as a correct rejection, and 59 of them did once.
 
 Pure Java 21 built by `javac` with no library beyond `java.base`, no jar, no
 build system, no third party anything. The class file parser is written from
@@ -252,9 +257,13 @@ Ranked by how little of them we control:
       done: t/fuzz.py, five kinds of corruption, 2000 mutants per run and
       8000 across two seeds by hand, no escape. Watched going red with the
       cursor's bounds check disabled.
-- [ ] Never throw anything but our own exception types
+- [x] Never throw anything but our own exception types
       why: an ArrayIndexOutOfBoundsException escaping the parser is a bug
       report, not a diagnosis.
+      done: anything that escapes one file is caught, named INTERNAL with
+      the classv line it came through, given exit status 5, and the run
+      carries on to the next file. The fuzz sweep fails on any of them.
+      Zero over 8000 random mutants and the whole corpus.
 - [ ] Verify the `Exceptions`, `BootstrapMethods` and `Record` attributes
       why: they are parsed as opaque bytes today, so a length error in one
       is invisible until it is not.

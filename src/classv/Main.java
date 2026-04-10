@@ -16,11 +16,12 @@ import java.util.List;
  *   2  usage error
  *   3  classv refuses to analyse it        ("REFUSE")
  *   4  the file is not a well formed class ("FORMAT")
+ *   5  a defect in classv itself ("INTERNAL"), which is never an answer
  */
 public final class Main {
 
     public static final int EXIT_OK = 0, EXIT_VERIFY = 1, EXIT_USAGE = 2,
-            EXIT_REFUSE = 3, EXIT_FORMAT = 4;
+            EXIT_REFUSE = 3, EXIT_FORMAT = 4, EXIT_INTERNAL = 5;
 
     private static final String USAGE =
             "usage: classv [--info] [--pool] [--disasm] [--smt] [--frames] [--verify]\n"
@@ -75,11 +76,31 @@ public final class Main {
         int worst = EXIT_OK;
         for (String f : files) {
             if (files.size() > 1) out.println("== " + f);
-            int st = one(f, info, pool, disasm, smt, verify, frames, hierarchy, out, err);
+            int st;
+            try {
+                st = one(f, info, pool, disasm, smt, verify, frames, hierarchy, out, err);
+            } catch (RuntimeException | StackOverflowError e) {
+                // A bug in classv, and it gets a status of its own.  Letting
+                // it out of main would exit 1, which is the status for a
+                // class the type checker rejects, and would end the run:
+                // one escaping exception left 396 of 400 fuzz mutants with
+                // no answer, counted as a batch that had been looked at.
+                out.println("INTERNAL " + f + ": " + e + atFirstFrame(e));
+                st = EXIT_INTERNAL;
+            }
             if (st == EXIT_USAGE) return EXIT_USAGE;
             if (st > worst) worst = st;
         }
         return files.size() > 1 ? EXIT_OK : worst;
+    }
+
+    /** The first line of classv's own that the exception came through. */
+    private static String atFirstFrame(Throwable e) {
+        for (StackTraceElement t : e.getStackTrace())
+            if (t.getClassName().startsWith("classv."))
+                return " at " + t.getClassName() + "." + t.getMethodName()
+                        + " line " + t.getLineNumber();
+        return "";
     }
 
     static int one(String file, boolean info, boolean pool, boolean disasm, boolean smt,
