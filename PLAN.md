@@ -250,6 +250,11 @@ Ranked by how little of them we control:
 
 ### Milestone 4: the parts that are still soft
 
+- [x] Reject malformed modified UTF-8
+      why: found by random corruption, 45 of the first 51 false accepts.
+      The decoder already knew; nothing acted on what it knew.
+      done: ten cases measured against HotSpot one at a time, in the suite.
+
 - [x] Truncation and corruption sweeps over the whole file
       why: a class file is attacker controlled input in any tool that reads
       one from a stranger, and "no exception escaped" is a claim with a

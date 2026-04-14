@@ -160,6 +160,25 @@ for pair in "Sub putfield" "Own return"; do
 	esac
 done
 
+# Modified UTF-8, JVMS 4.4.7.  Which of these HotSpot rejects is measured
+# here every run rather than written down once: the cases where it differs
+# from real UTF-8 are exactly the ones a reader gets wrong, and 45 of 51
+# false accepts in the first random corruption sweep were this.
+python3 "$here/utf8_cases.py" "$work/uninit/Own.class" "$work/utf8" > "$work/utf8.txt" \
+	|| { echo "cannot build the UTF-8 cases"; exit 2; }
+nutf=0
+while read -r name path; do
+	jvm=$(probe_one "$path" "$work/utf8" | cut -f1)
+	ours=$(java -cp "$root/build" classv.Main --verify "$path" 2>&1 | cut -d' ' -f1)
+	nutf=$((nutf + 1))
+	case "$jvm:$ours" in
+	ACCEPT:OK)     ok "both accept the Utf8 case $name" ;;
+	FORMAT:FORMAT) ok "both reject the Utf8 case $name" ;;
+	*)             bad "Utf8 case $name: the JVM says $jvm and classv says $ours" ;;
+	esac
+done < "$work/utf8.txt"
+[ "$nutf" -ge 10 ] || { echo "only $nutf UTF-8 cases were run"; exit 2; }
+
 # -Xverify:all is load bearing, and this is the only place that says so.
 # Without it a class loaded by the boot loader is not verified at all
 # (BytecodeVerificationLocal defaults to false), so the whole boot path of

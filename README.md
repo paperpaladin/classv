@@ -347,6 +347,31 @@ The digest printed is of the mutant bytes rather than of the report about
 them, so a seed that had stopped being used would show as the same digest
 for every seed.
 
+### Modified UTF-8
+
+JVMS 4.4.7 is not UTF-8, and the differences are exactly where a reader goes
+wrong. The constant pool already decoded the encoding and flagged the
+malformed cases; it did not reject them, so a corrupted string constant was
+a class file classv accepted and the JVM did not. 45 of the first 51 false
+accepts from the random corruption sweep were this one hole.
+
+Which cases HotSpot rejects is measured rather than read off the page.
+`t/utf8_cases.py` plants ten byte sequences in the one Utf8 constant of a
+fixture that nothing structural reads, and the suite asks the JVM about each
+one every run:
+
+| bytes | HotSpot | classv |
+|---|---|---|
+| ordinary ASCII | accept | accept |
+| `c0 80`, which is how this encoding writes NUL | accept | accept |
+| `ed a0 80`, an unpaired surrogate | accept | accept |
+| a bare `00` | reject | reject |
+| `c0 af` and `c1 bf`, overlong two byte forms | reject | reject |
+| `e0 80 af`, an overlong three byte form | reject | reject |
+| `f0 90 80 80`, a real four byte UTF-8 sequence | reject | reject |
+| `80` with no lead byte | reject | reject |
+| a lead byte at the end of the string | reject | reject |
+
 ### Where HotSpot is stricter than the spec
 
 The bci comparison found one place where following JVMS 4.10.1.9 to the

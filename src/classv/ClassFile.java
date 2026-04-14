@@ -121,6 +121,18 @@ public final class ClassFile {
                     bad[0] = false;
                     p.str[i] = ConstantPool.decodeUtf8(raw, bad);
                     p.badUtf8[i] = bad[0];
+                    if (bad[0])
+                        // JVMS 4.4.7, and HotSpot agrees exactly: 0x00 on its
+                        // own, 0xf0 and above, a continuation byte with no
+                        // lead, a truncated sequence, and any overlong form
+                        // except 0xc0 0x80 are all rejected; the unpaired
+                        // surrogate ed a0 80 is not, which is the whole
+                        // reason this encoding is not UTF-8.  Measured one
+                        // case at a time against the JVM, and the suite
+                        // keeps the measurement.
+                        throw new ClassFormatException(b.pos() - len,
+                                "constant pool entry " + i + " is " + len + " bytes that"
+                                + " are not well formed modified UTF-8 (JVMS 4.4.7)");
                     break;
                 }
                 case ConstantPool.INTEGER:
