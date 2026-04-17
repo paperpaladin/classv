@@ -120,6 +120,11 @@ def main():
     print('--- mutation sweep: %d mutants built, %d answered about by both'
           % (made_any, n + total.failures))
     bad = total.failures
+    if total.missing:
+        # A mutant that neither side answered about is not a mutant that
+        # agreed with anything.
+        print('FAIL %d mutants got no answer from one side or the other' % total.missing)
+        bad += 1
     if total.bci_same < 100:
         # The instruction comparison is the part of this sweep that can go
         # quiet without the verdict numbers moving at all: every mutant could

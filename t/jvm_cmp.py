@@ -28,11 +28,20 @@ def run_probe(probe_cmd, mode, listfile, roots=''):
     r = subprocess.run(probe_cmd.split() + [mode, listfile, roots],
                        capture_output=True, text=True, errors='replace')
     out = {}
+    unparsed = 0
     for ln in r.stdout.split('\n'):
         if not ln:
             continue
         parts = ln.split('\t')
+        if len(parts) < 2:
+            # A record the probe did not keep to one line.  Counted and
+            # reported, never skipped quietly: the paths in it get no answer
+            # and would otherwise look like classes nobody asked about.
+            unparsed += 1
+            continue
         out[parts[1]] = (parts[0], parts[2] if len(parts) > 2 else '')
+    if unparsed:
+        print('FAIL the probe wrote %d lines that are not one record each' % unparsed)
     return out, r
 
 

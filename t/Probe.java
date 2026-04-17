@@ -117,7 +117,24 @@ public class Probe {
     static String flat(Throwable t) {
         String m = t.getMessage();
         if (m == null) m = "";
-        return (t.getClass().getName() + ": " + m).replace('\n', '|').replace('\t', ' ');
+        return clean(t.getClass().getName() + ": " + m);
+    }
+
+    /**
+     * One line, one record.  A corrupted this_class can hold any byte at
+     * all, including a newline, and a name interpolated into a message put
+     * that newline in the middle of a tab separated record: the comparison
+     * script then read half a path as a whole line and died on it.  Every
+     * control character goes, not just the newline and the tab, because the
+     * next one to turn up will be a carriage return or a form feed.
+     */
+    static String clean(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            b.append(c < 0x20 || c == 0x7f ? '.' : c);
+        }
+        return b.toString();
     }
 
     /** this_class, read out of the file directly: the path need not match. */
@@ -223,13 +240,14 @@ public class Probe {
                     }
                     if (dup.contains(name)) {
                         out.println("ORACLE_NA\t" + p + "\tthe corpus holds more than one "
-                                + name + "; one loader can define only the first");
+                                + clean(name) + "; one loader can define only the first");
                         continue;
                     }
                     c = corpus.force(name);
                     if (c.getClassLoader() != corpus) {
                         out.println("ORACLE_NA\t" + p + "\tdefined by "
-                                + c.getClassLoader() + ", not from the corpus file");
+                                + clean(String.valueOf(c.getClassLoader()))
+                                + ", not from the corpus file");
                         continue;
                     }
                 }
@@ -249,7 +267,7 @@ public class Probe {
                 String blamed = locationClass(e.getMessage());
                 if (blamed != null && !blamed.equals(name))
                     out.println("ORACLE_NA\t" + p + "\tVerifyError raised while linking "
-                            + blamed + ", not this class");
+                            + clean(blamed) + ", not this class");
                 else
                     out.println("VERIFY\t" + p + "\t" + flat(e));
             } catch (ClassFormatError e) {
