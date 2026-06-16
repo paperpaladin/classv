@@ -97,6 +97,8 @@ public final class Verifier {
                         + " where the JVM retries with the type inference verifier if type"
                         + " checking fails, so a rejection here would not predict the JVM's"
                         + " answer");
+            Result load = superclassRules();
+            if (load != null) return load;
             for (ClassFile.Member m : cf.methods) {
                 if (m.code == null) {
                     if ((m.flags & (ClassFile.ACC_NATIVE | ClassFile.ACC_ABSTRACT)) == 0)
@@ -162,6 +164,29 @@ public final class Verifier {
         if ((cf.accessFlags & ClassFile.ACC_FINAL) != 0
                 && (cf.accessFlags & ClassFile.ACC_ABSTRACT) != 0)
             return new Result(Kind.FORMAT, "a class cannot be both final and abstract");
+        return null;
+    }
+
+    /**
+     * The two rules of JVMS 5.3.5 that need the superclass itself and not
+     * just its name, so they cannot live in structure(): they are asked
+     * after the version refusals, because a class classv has no algorithm
+     * for should be refused rather than answered about.
+     *
+     * HotSpot raises IncompatibleClassChangeError for both, which is neither
+     * a format nor a verification error; classv has no third word for a
+     * rejection, so they come out as FORMAT and the comparison counts them
+     * as an agreed rejection in a different category.
+     */
+    private Result superclassRules() throws Refusal {
+        if (cf.superClassIndex == 0) return null;
+        if (h.isInterface(cf.superClass))
+            return new Result(Kind.FORMAT, cf.thisClass + " has the interface "
+                    + cf.superClass + " as its superclass"
+                    + " (IncompatibleClassChangeError)");
+        if (h.isFinal(cf.superClass))
+            return new Result(Kind.FORMAT, cf.thisClass + " cannot inherit from the final"
+                    + " class " + cf.superClass + " (IncompatibleClassChangeError)");
         return null;
     }
 

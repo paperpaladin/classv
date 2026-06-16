@@ -151,13 +151,37 @@ for pair in "Sub putfield" "Own return"; do
 		bad "the JVM did not blame a $want in $cls: $(printf '%s' "$jvm" | cut -c1-160)"
 		continue
 	fi
-	ours=$(java -cp "$root/build" classv.Main --verify "$work/u.class" 2>&1)
+	ours=$(java -cp "$root/build" classv.Main --cp "$work/uninit" --verify "$work/u.class" 2>&1)
 	case $ours in
 	VERIFY*"@$bci: $want"*)
 		ok "classv and the JVM both blame the $want at @$bci of $cls.<init>" ;;
 	*)
 		bad "the JVM blames the $want at @$bci of $cls.<init>, classv says $(printf '%s' "$ours" | cut -c1-160)" ;;
 	esac
+done
+
+# JVMS 5.3.5: the superclass may be neither an interface nor final.  Both
+# need the superclass itself and not just its name, and both are built the
+# way they happen in life rather than by patching bytes: compile Sub against
+# an ordinary Base, then put a differently declared Base beside it.
+mkdir -p "$work/sup/a" "$work/sup/b" "$work/sup/c" "$work/sup/iface" "$work/sup/final"
+printf 'class Base { }\nclass Sub extends Base { }\n' > "$work/sup/A.java"
+printf 'public interface Base { }\n' > "$work/sup/b/Base.java"
+printf 'public final class Base { }\n' > "$work/sup/c/Base.java"
+javac -d "$work/sup/a" "$work/sup/A.java" 2>/dev/null
+javac -d "$work/sup/b" "$work/sup/b/Base.java" 2>/dev/null
+javac -d "$work/sup/c" "$work/sup/c/Base.java" 2>/dev/null
+cp "$work/sup/a/Sub.class" "$work/sup/b/Base.class" "$work/sup/iface/"
+cp "$work/sup/a/Sub.class" "$work/sup/c/Base.class" "$work/sup/final/"
+for kind in iface final; do
+	jvm=$(probe_one "$work/sup/$kind/Sub.class" "$work/sup/$kind" | cut -f1)
+	ours=$(java -cp "$root/build" classv.Main --cp "$work/sup/$kind" --verify \
+		"$work/sup/$kind/Sub.class" | cut -d' ' -f1)
+	if [ "$jvm" = OTHER ] && [ "$ours" = FORMAT ]; then
+		ok "both reject a superclass that is $kind"
+	else
+		bad "a superclass that is $kind: the JVM says $jvm and classv says $ours"
+	fi
 done
 
 # Modified UTF-8, JVMS 4.4.7.  Which of these HotSpot rejects is measured

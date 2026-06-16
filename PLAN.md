@@ -250,6 +250,10 @@ Ranked by how little of them we control:
 
 ### Milestone 4: the parts that are still soft
 
+- [x] The superclass may be neither an interface nor final, JVMS 5.3.5
+      why: random corruption found both, 5 of 11 remaining false accepts.
+      done: measured against IncompatibleClassChangeError from the JVM,
+      with fixtures built the way the error happens rather than by patching.
 - [x] Reject malformed modified UTF-8
       why: found by random corruption, 45 of the first 51 false accepts.
       The decoder already knew; nothing acted on what it knew.

@@ -32,9 +32,11 @@ public final class Hierarchy {
     /** What the checker needs to know about one class. */
     static final class Info {
         final boolean isInterface;
+        final boolean isFinal;
         final String superName;      // null for java/lang/Object and interfaces with no super
-        Info(boolean isInterface, String superName) {
+        Info(boolean isInterface, boolean isFinal, String superName) {
             this.isInterface = isInterface;
+            this.isFinal = isFinal;
             this.superName = superName;
         }
     }
@@ -52,7 +54,8 @@ public final class Hierarchy {
      * and in the normal case (verifying a file by path) it is not.
      */
     public void declare(ClassFile cf) {
-        local.put(cf.thisClass, new Info(cf.isInterface(), cf.superClass));
+        local.put(cf.thisClass, new Info(cf.isInterface(),
+                (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass));
     }
 
     Info info(String name) throws Refusal {
@@ -78,7 +81,8 @@ public final class Hierarchy {
             try {
                 ClassFile cf = ClassFile.parse(Files.readAllBytes(p));
                 fileLookups++;
-                return new Info(cf.isInterface(), cf.superClass);
+                return new Info(cf.isInterface(),
+                        (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass);
             } catch (Exception e) {
                 // A root holding a broken file is not a reason to claim the
                 // class does not exist; fall through to the next source.
@@ -101,15 +105,19 @@ public final class Hierarchy {
                 // reflection at its word made every interface typed value
                 // fail to be assignable to Object, which is most of
                 // java.lang.String.
-                return new Info(true, OBJECT);
+                return new Info(true, false, OBJECT);
             }
-            return new Info(c.isInterface(), s == null ? null : s.getName().replace('.', '/'));
+            boolean fin = java.lang.reflect.Modifier.isFinal(c.getModifiers());
+            return new Info(c.isInterface(), fin,
+                    s == null ? null : s.getName().replace('.', '/'));
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
         }
     }
 
     public boolean isInterface(String name) throws Refusal { return info(name).isInterface; }
+
+    public boolean isFinal(String name) throws Refusal { return info(name).isFinal; }
 
     /** The superclass chain, JVMS 4.10.1.2 isJavaSubclassOf. */
     public boolean isJavaSubclassOf(String sub, String sup) throws Refusal {

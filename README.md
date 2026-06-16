@@ -21,7 +21,10 @@ usage: classv [--info] [--pool] [--disasm] [--smt] [--frames] [--verify]
 ```
 
 `--cp DIR` adds a directory of class files that the hierarchy resolver may
-read to answer subtype questions. It never loads them; it parses them with
+read to answer subtype questions. It matters: a class whose superclass
+cannot be found, on a `--cp` root or by reflection in this JVM, is refused
+rather than analysed, because two of the rules are about the superclass
+itself and not its name. It never loads them; it parses them with
 classv's own parser, so nothing is initialised and no code runs. `@LISTFILE`
 takes one path per line, because the corpus is 27846 files and that does not
 fit in argv.
@@ -346,6 +349,24 @@ was watched going red first, with the cursor's bounds check replaced by
 The digest printed is of the mutant bytes rather than of the report about
 them, so a seed that had stopped being used would show as the same digest
 for every seed.
+
+### Two rules about the superclass
+
+JVMS 5.3.5 says the superclass may be neither an interface nor final.
+HotSpot raises `IncompatibleClassChangeError` for both, at load time, before
+the verifier runs. Random corruption found them: 5 of 11 remaining false
+accepts over 6000 mutants.
+
+The fixtures are built the way the error happens in life rather than by
+patching bytes. `Sub` is compiled against an ordinary `class Base`, and then
+a `Base.class` compiled from `interface Base` or from `final class Base` is
+put beside it. Both sides reject both, and the suite checks that against
+the JVM's answer each run.
+
+classv has no third word for a rejection that is neither a format error nor
+a verification error, so these come out as `FORMAT`, which the comparison
+counts as an agreed rejection in a different category rather than as a
+match.
 
 ### Modified UTF-8
 
