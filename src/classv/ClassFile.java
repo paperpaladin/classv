@@ -80,6 +80,7 @@ public final class ClassFile {
         cf.minor = b.u2();
         cf.major = b.u2();
         cf.pool = readPool(b);
+        checkClassNames(cf.pool);
         cf.accessFlags = b.u2();
         cf.thisClassIndex = b.u2();
         cf.thisClass = cf.pool.className(cf.thisClassIndex);
@@ -101,6 +102,51 @@ public final class ClassFile {
             if (a != null) m.code = readCode(a, cf.pool);
         }
         return cf;
+    }
+
+    /**
+     * Every CONSTANT_Class name, JVMS 4.2.1, in a second pass because a
+     * Class entry may name a Utf8 that comes after it.
+     *
+     * HotSpot is laxer here than the language is, and the rule below is what
+     * it does rather than what Java identifiers look like: a space, a '<'
+     * and a leading digit are all accepted in a class name, and the suite
+     * has a case for each so that being stricter would be caught.  What is
+     * rejected is '.', ';', '[' outside an array descriptor, and an empty
+     * component, which is what "a//b" and a leading or trailing slash give.
+     */
+    private static void checkClassNames(ConstantPool p) throws ClassFormatException {
+        for (int i = 1; i < p.count; i++) {
+            if (p.tag(i) != ConstantPool.CLASS) continue;
+            String n = p.className(i);
+            if (!legalClassName(n))
+                throw new ClassFormatException(0, "constant pool entry " + i
+                        + " names the class \"" + n + "\", which is not a legal class"
+                        + " name (JVMS 4.2.1)");
+        }
+    }
+
+    static boolean legalClassName(String n) {
+        if (n.isEmpty()) return false;
+        if (n.charAt(0) == '[') {
+            try {
+                VType.fromDescriptor(n);
+                return true;
+            } catch (ClassFormatException e) {
+                return false;
+            }
+        }
+        int start = 0;
+        for (int i = 0; i <= n.length(); i++) {
+            char c = i == n.length() ? '/' : n.charAt(i);
+            if (c == '/') {
+                if (i == start) return false;        // an empty component
+                start = i + 1;
+            } else if (c == '.' || c == ';' || c == '[') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static ConstantPool readPool(Buf b) throws ClassFormatException {

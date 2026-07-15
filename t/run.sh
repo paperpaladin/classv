@@ -184,6 +184,25 @@ for kind in iface final; do
 	fi
 done
 
+# Class names, JVMS 4.2.1, in both directions: HotSpot rejects a '.' and
+# accepts a space, and a reader who assumed Java identifiers would get both
+# wrong.  The fixture's own name is patched, so the file is otherwise whole.
+python3 "$here/name_cases.py" "$work/uninit/Own.class" "$work/names" > "$work/names.cases" \
+	|| { echo "cannot build the class name cases"; exit 2; }
+nname=0
+while read -r name path; do
+	jvm=$(probe_one "$path" "$work/names" | cut -f1)
+	ours=$(java -cp "$root/build" classv.Main --cp "$work/names" --verify "$path" \
+		| cut -d' ' -f1)
+	nname=$((nname + 1))
+	case "$jvm:$ours" in
+	ACCEPT:OK)     ok "both accept the class name case $name" ;;
+	FORMAT:FORMAT) ok "both reject the class name case $name" ;;
+	*)             bad "class name case $name: the JVM says $jvm and classv says $ours" ;;
+	esac
+done < "$work/names.cases"
+[ "$nname" -ge 8 ] || { echo "only $nname class name cases were run"; exit 2; }
+
 # Modified UTF-8, JVMS 4.4.7.  Which of these HotSpot rejects is measured
 # here every run rather than written down once: the cases where it differs
 # from real UTF-8 are exactly the ones a reader gets wrong, and 45 of 51

@@ -254,6 +254,9 @@ Ranked by how little of them we control:
       why: random corruption found both, 5 of 11 remaining false accepts.
       done: measured against IncompatibleClassChangeError from the JVM,
       with fixtures built the way the error happens rather than by patching.
+- [x] Reject illegal class names, JVMS 4.2.1
+      why: random corruption, and the rule is laxer than anybody guesses.
+      done: eight cases measured against the JVM, three of them accepted.
 - [x] Reject malformed modified UTF-8
       why: found by random corruption, 45 of the first 51 false accepts.
       The decoder already knew; nothing acted on what it knew.

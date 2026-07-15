@@ -368,6 +368,18 @@ a verification error, so these come out as `FORMAT`, which the comparison
 counts as an agreed rejection in a different category rather than as a
 match.
 
+### Class names
+
+HotSpot is laxer about a class name than the language is, so a reader who
+assumed Java identifiers would be wrong in both directions.
+`t/name_cases.py` patches the fixture's own `this_class` name, three bytes
+at a time, and the suite asks the JVM about each case every run.
+
+Rejected: a `.`, a `;`, a `[` outside an array descriptor, and an empty
+component, which is what `a//`, a leading slash and a trailing slash all
+produce. Accepted: a space, a `<`, a leading digit, and of course an
+ordinary `a/b`.
+
 ### Modified UTF-8
 
 JVMS 4.4.7 is not UTF-8, and the differences are exactly where a reader goes
