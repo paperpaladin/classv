@@ -184,6 +184,27 @@ for kind in iface final; do
 	fi
 done
 
+# Class file versions, JVMS 4.1.  The minor version is the part nobody
+# remembers: it must be 0 or 65535 from major 56 on, it may be anything at
+# all below that, and 65535 means preview and needs a flag the oracle is not
+# given.  A refusal is a legal answer here and is printed as one.
+python3 "$here/version_cases.py" "$work/uninit/Own.class" "$work/vers" > "$work/vers.cases" \
+	|| { echo "cannot build the version cases"; exit 2; }
+nver=0
+while read -r name major minor path; do
+	jvm=$(probe_one "$path" "$work/vers" | cut -f1)
+	ours=$(java -cp "$root/build" classv.Main --cp "$work/vers" --verify "$path" \
+		| cut -d' ' -f1)
+	nver=$((nver + 1))
+	case "$jvm:$ours" in
+	ACCEPT:OK)      ok "both accept version $major.$minor ($name)" ;;
+	FORMAT:FORMAT)  ok "both reject version $major.$minor ($name)" ;;
+	ACCEPT:REFUSE)  ok "classv refuses version $major.$minor ($name), which the JVM accepts" ;;
+	*)              bad "version $major.$minor ($name): the JVM says $jvm and classv says $ours" ;;
+	esac
+done < "$work/vers.cases"
+[ "$nver" -ge 10 ] || { echo "only $nver version cases were run"; exit 2; }
+
 # Class names, JVMS 4.2.1, in both directions: HotSpot rejects a '.' and
 # accepts a space, and a reader who assumed Java identifiers would get both
 # wrong.  The fixture's own name is patched, so the file is otherwise whole.

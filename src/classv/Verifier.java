@@ -136,11 +136,24 @@ public final class Verifier {
         // this JVM, and a class file one release too new is rejected by it
         // and would be accepted by the next one.
         int maxMajor = Runtime.version().feature() + 44;
-        if (cf.major > maxMajor || (cf.major == maxMajor && cf.minor != 0
-                && cf.minor != 65535))
+        if (cf.major > maxMajor)
             return new Result(Kind.FORMAT, "class file version " + cf.major + "."
                     + cf.minor + " is newer than the " + maxMajor
                     + ".0 this JVM supports (UnsupportedClassVersionError)");
+        // JVMS 4.1: from major 56 the minor version must be 0 or 65535, and
+        // 65535 means a preview class file.  Below 56 any minor at all is
+        // accepted, which was measured: 52.5 and 55.1 link, 56.1 and 60.1 do
+        // not.  A preview class file links only under --enable-preview and
+        // only at the current major, so what classv models here is this JVM
+        // as the suite starts it, without the flag.
+        if (cf.major >= 56 && cf.minor != 0)
+            return new Result(Kind.FORMAT, "class file version " + cf.major + "."
+                    + cf.minor + (cf.minor == 65535
+                        ? " is a preview class file, and preview features are not"
+                          + " enabled (UnsupportedClassVersionError)"
+                        : " has a minor version that is neither 0 nor 65535, which"
+                          + " major " + cf.major + " does not allow"
+                          + " (UnsupportedClassVersionError)"));
         if (cf.major < 45)
             return new Result(Kind.FORMAT, "class file version " + cf.major
                     + " predates the first one, 45");

@@ -368,6 +368,21 @@ a verification error, so these come out as `FORMAT`, which the comparison
 counts as an agreed rejection in a different category rather than as a
 match.
 
+### Class file versions
+
+The minor version is the part nobody remembers. From major 56 it must be 0
+or 65535 and nothing else; below 56 anything at all is accepted; 65535 means
+a preview class file, which links only under `--enable-preview` and only at
+the current major. All of that was measured rather than read: 52.5 and 55.1
+link, 56.1 and 60.1 do not, and 65.65535 links under the flag and not
+without it.
+
+classv models this JVM as the suite starts it, with no `--enable-preview`,
+so a preview class file is rejected and the message says why. Ten versions
+are put to the JVM every run, including the two classv refuses: 49.3, which
+has no StackMapTable, and 50.0, where HotSpot retries with the inference
+verifier if type checking fails.
+
 ### Class names
 
 HotSpot is laxer about a class name than the language is, so a reader who

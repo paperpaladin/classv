@@ -254,6 +254,10 @@ Ranked by how little of them we control:
       why: random corruption found both, 5 of 11 remaining false accepts.
       done: measured against IncompatibleClassChangeError from the JVM,
       with fixtures built the way the error happens rather than by patching.
+- [x] Class file versions, JVMS 4.1, including preview
+      why: 65.65535 was accepted by classv and rejected by the JVM, and the
+      minor version rule changes at major 56, which is easy to miss.
+      done: ten versions measured against the JVM each run.
 - [x] Reject illegal class names, JVMS 4.2.1
       why: random corruption, and the rule is laxer than anybody guesses.
       done: eight cases measured against the JVM, three of them accepted.
