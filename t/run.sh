@@ -184,6 +184,28 @@ for kind in iface final; do
 	fi
 done
 
+# Attribute lengths.  Every distinct attribute in a fixture gets the first
+# two bytes of its body bumped by one, which is its entry count where it has
+# one, and the JVM decides which of them matter.  Code, Signature and
+# SourceFile come back accepted because those two bytes are not a count,
+# and that half of the measurement is as useful as the rejections.
+javac -g -d "$work/shapes" "$here/fixtures/Shapes.java" 2>/dev/null
+python3 "$here/attr_cases.py" "$work/shapes/Shapes.class" "$work/attrs" > "$work/attrs.cases" \
+	|| { echo "cannot build the attribute cases"; exit 2; }
+nattr=0
+while read -r name path; do
+	jvm=$(probe_one "$path" "$work/shapes" | cut -f1)
+	ours=$(java -cp "$root/build" classv.Main --cp "$work/shapes" --verify "$path" \
+		| cut -d' ' -f1)
+	nattr=$((nattr + 1))
+	case "$jvm:$ours" in
+	ACCEPT:OK)     ok "both accept a bumped count in $name" ;;
+	FORMAT:FORMAT) ok "both reject a bumped count in $name" ;;
+	*)             bad "a bumped count in $name: the JVM says $jvm and classv says $ours" ;;
+	esac
+done < "$work/attrs.cases"
+[ "$nattr" -ge 8 ] || { echo "only $nattr attribute cases were run"; exit 2; }
+
 # Class file versions, JVMS 4.1.  The minor version is the part nobody
 # remembers: it must be 0 or 65535 from major 56 on, it may be anything at
 # all below that, and 65535 means preview and needs a flag the oracle is not

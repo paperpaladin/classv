@@ -280,9 +280,13 @@ Ranked by how little of them we control:
       the classv line it came through, given exit status 5, and the run
       carries on to the next file. The fuzz sweep fails on any of them.
       Zero over 8000 random mutants and the whole corpus.
-- [ ] Verify the `Exceptions`, `BootstrapMethods` and `Record` attributes
+- [x] Verify the `Exceptions`, `BootstrapMethods` and `Record` attributes
       why: they are parsed as opaque bytes today, so a length error in one
       is invisible until it is not.
+      done for the ones whose entries are a fixed size, plus the walk for
+      BootstrapMethods, measured by bumping each attribute's count and
+      letting the JVM say which matter. Record, Module and the annotation
+      attributes are still opaque and the README says so.
 - [x] Older real classes from installed jars
       why: the inference path classes exist in the wild and the refusal
       needs to be measured against real ones, not synthesised ones.

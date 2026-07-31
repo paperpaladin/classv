@@ -368,6 +368,23 @@ a verification error, so these come out as `FORMAT`, which the comparison
 counts as an agreed rejection in a different category rather than as a
 match.
 
+### Attribute lengths
+
+An attribute whose shape is a count followed by fixed size entries has a
+length its count determines, and HotSpot checks it while parsing rather than
+letting the verifier trip over it later. classv did not, so bumping the
+count of a `LineNumberTable` by one gave `ClassFormatError: LineNumberTable
+attribute has wrong length` from the JVM and an untroubled `OK` from classv.
+
+Which attributes are checked that way was decided by the JVM rather than
+from memory. `t/attr_cases.py` bumps the first two bytes of every distinct
+attribute in the Shapes fixture and asks:
+
+rejected by both: `Exceptions`, `InnerClasses`, `LineNumberTable`,
+`LocalVariableTable`, `LocalVariableTypeTable`, `NestMembers`,
+`BootstrapMethods`, `StackMapTable`. Accepted by both: `Code`, `Signature`,
+`SourceFile`, whose first two bytes are not a count at all.
+
 ### Class file versions
 
 The minor version is the part nobody remembers. From major 56 it must be 0
@@ -459,9 +476,11 @@ has shown the JVM to be reachable on, each with the HotSpot diagnosis it was
 added for. A malformed class file that no recipe produces may well be
 accepted.
 
-**Attributes parsed as opaque bytes**: `Exceptions`, `BootstrapMethods`,
-`Record`, and the annotation attributes. A length error inside one is
-invisible.
+**Attributes still parsed as opaque bytes**: `Record`, `Module`, and the
+annotation attributes. Their contents are unchecked, and the only reason
+`Record` is not in the length table above is that its entries are not fixed
+size. The attributes whose count determines their length are checked;
+everything inside those entries is not.
 
 **A crash is a result classv prints, not a path it is known not to have.**
 Anything that escapes the analysis of one file is caught, printed as

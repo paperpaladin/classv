@@ -249,8 +249,58 @@ public final class ClassFile {
                         + (p.valid(ni) && p.tag(ni) == ConstantPool.UTF8 ? p.utf8(ni) : "#" + ni)
                         + " claims " + len + " bytes but only " + b.remaining() + " remain");
             int off = b.pos();
-            out.add(new Attr(p.utf8(ni), b.bytes((int) len), off));
+            Attr a = new Attr(p.utf8(ni), b.bytes((int) len), off);
+            checkAttrLength(a, off);
+            out.add(a);
         }
+    }
+
+    /**
+     * An attribute whose shape is a count followed by fixed size entries has
+     * a length the count determines, and a mismatch is a ClassFormatError in
+     * HotSpot rather than something the verifier later trips over.  Random
+     * corruption found these: bumping the count of a LineNumberTable by one
+     * gave "LineNumberTable attribute has wrong length" from the JVM and an
+     * untroubled OK from classv.
+     *
+     * The list is the attributes whose count HotSpot checks, measured by
+     * bumping each one in turn.  Code, Signature and SourceFile are not in
+     * it because their first two bytes are not a count.
+     */
+    private static void checkAttrLength(Attr a, int off) throws ClassFormatException {
+        int entry;
+        switch (a.name) {
+            case "Exceptions": case "NestMembers": case "PermittedSubclasses":
+                entry = 2; break;
+            case "LineNumberTable": entry = 4; break;
+            case "LocalVariableTable": case "LocalVariableTypeTable": entry = 10; break;
+            case "InnerClasses": entry = 8; break;
+            case "BootstrapMethods": checkBootstrapMethods(a, off); return;
+            default: return;
+        }
+        if (a.data.length < 2)
+            throw new ClassFormatException(off, a.name + " is " + a.data.length
+                    + " bytes, too short to hold even its own count");
+        int count = ((a.data[0] & 0xff) << 8) | (a.data[1] & 0xff);
+        int want = 2 + entry * count;
+        if (a.data.length != want)
+            throw new ClassFormatException(off, a.name + " says it holds " + count
+                    + " entries of " + entry + " bytes, which needs " + want
+                    + " bytes, and the attribute is " + a.data.length);
+    }
+
+    /** The one variable shape attribute whose walk is three lines. */
+    private static void checkBootstrapMethods(Attr a, int off) throws ClassFormatException {
+        Buf b = new Buf(a.data);
+        int n = b.u2();
+        for (int i = 0; i < n; i++) {
+            b.u2();                         // the method handle
+            b.skip(2 * b.u2());             // its static arguments
+        }
+        if (b.remaining() != 0)
+            throw new ClassFormatException(off, "BootstrapMethods holds " + n
+                    + " methods and then " + b.remaining() + " bytes that are not part"
+                    + " of any of them");
     }
 
     private static CodeAttr readCode(Attr a, ConstantPool p) throws ClassFormatException {
