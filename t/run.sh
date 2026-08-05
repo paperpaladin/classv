@@ -184,6 +184,26 @@ for kind in iface final; do
 	fi
 done
 
+# Sealing, JVMS 5.3.5 again: a sealed supertype permits a fixed list of
+# subclasses.  Built the same way as the two above, by compiling Sub against
+# an unsealed I and then putting a sealed I beside it.
+mkdir -p "$work/seal/a" "$work/seal/b" "$work/seal/mix"
+printf 'interface I { }\nclass Sub implements I { }\n' > "$work/seal/A.java"
+printf 'sealed interface I permits Other { }\nfinal class Other implements I { }\n' \
+	> "$work/seal/B.java"
+javac -d "$work/seal/a" "$work/seal/A.java" 2>/dev/null
+javac -d "$work/seal/b" "$work/seal/B.java" 2>/dev/null
+cp "$work/seal/a/Sub.class" "$work/seal/mix/"
+cp "$work/seal/b/I.class" "$work/seal/b/Other.class" "$work/seal/mix/"
+jvm=$(probe_one "$work/seal/mix/Sub.class" "$work/seal/mix" | cut -f1)
+ours=$(java -cp "$root/build" classv.Main --cp "$work/seal/mix" --verify \
+	"$work/seal/mix/Sub.class" | cut -d' ' -f1)
+if [ "$jvm" = OTHER ] && [ "$ours" = FORMAT ]; then
+	ok "both reject a class that is not a permitted subclass of a sealed interface"
+else
+	bad "a class outside a sealed interface's permits list: the JVM says $jvm and classv says $ours"
+fi
+
 # Attribute lengths.  Every distinct attribute in a fixture gets the first
 # two bytes of its body bumped by one, which is its entry count where it has
 # one, and the JVM decides which of them matter.  Code, Signature and

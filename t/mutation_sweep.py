@@ -106,6 +106,8 @@ def main():
         total.bci_diff += t.bci_diff
         for k, v in t.classv_refuse.items():
             total.classv_refuse[k] = total.classv_refuse.get(k, 0) + v
+        for k, v in t.refused_jvm.items():
+            total.refused_jvm[k] = total.refused_jvm.get(k, 0) + v
         for k, v in t.oracle_na.items():
             total.oracle_na[k] = total.oracle_na.get(k, 0) + v
         shutil.rmtree(d, ignore_errors=True)

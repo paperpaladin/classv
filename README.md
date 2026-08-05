@@ -350,9 +350,10 @@ The digest printed is of the mutant bytes rather than of the report about
 them, so a seed that had stopped being used would show as the same digest
 for every seed.
 
-### Two rules about the superclass
+### Three rules about the supertypes
 
-JVMS 5.3.5 says the superclass may be neither an interface nor final.
+JVMS 5.3.5 says the superclass may be neither an interface nor final, and
+that a sealed supertype permits a fixed list of subclasses.
 HotSpot raises `IncompatibleClassChangeError` for both, at load time, before
 the verifier runs. Random corruption found them: 5 of 11 remaining false
 accepts over 6000 mutants.
@@ -360,8 +361,10 @@ accepts over 6000 mutants.
 The fixtures are built the way the error happens in life rather than by
 patching bytes. `Sub` is compiled against an ordinary `class Base`, and then
 a `Base.class` compiled from `interface Base` or from `final class Base` is
-put beside it. Both sides reject both, and the suite checks that against
-the JVM's answer each run.
+put beside it. The sealing case is the same trick: `Sub implements I`
+compiled against an ordinary interface, then an `I.class` that is sealed and
+permits something else. All three are rejected by both sides, checked
+against the JVM's answer each run.
 
 classv has no third word for a rejection that is neither a format error nor
 a verification error, so these come out as `FORMAT`, which the comparison

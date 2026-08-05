@@ -250,6 +250,9 @@ Ranked by how little of them we control:
 
 ### Milestone 4: the parts that are still soft
 
+- [x] A sealed supertype permits a fixed list of subclasses, JVMS 5.3.5
+      why: 6 of the 9 false accepts left after the other checks, all of
+      them a corrupted class name falling out of a PermittedSubclasses list.
 - [x] The superclass may be neither an interface nor final, JVMS 5.3.5
       why: random corruption found both, 5 of 11 remaining false accepts.
       done: measured against IncompatibleClassChangeError from the JVM,

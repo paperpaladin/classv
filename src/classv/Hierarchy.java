@@ -34,10 +34,13 @@ public final class Hierarchy {
         final boolean isInterface;
         final boolean isFinal;
         final String superName;      // null for java/lang/Object and interfaces with no super
-        Info(boolean isInterface, boolean isFinal, String superName) {
+        /** The PermittedSubclasses list, or null where the class is not sealed. */
+        final String[] permitted;
+        Info(boolean isInterface, boolean isFinal, String superName, String[] permitted) {
             this.isInterface = isInterface;
             this.isFinal = isFinal;
             this.superName = superName;
+            this.permitted = permitted;
         }
     }
 
@@ -55,7 +58,8 @@ public final class Hierarchy {
      */
     public void declare(ClassFile cf) {
         local.put(cf.thisClass, new Info(cf.isInterface(),
-                (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass));
+                (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass,
+                permittedOf(cf)));
     }
 
     Info info(String name) throws Refusal {
@@ -82,7 +86,8 @@ public final class Hierarchy {
                 ClassFile cf = ClassFile.parse(Files.readAllBytes(p));
                 fileLookups++;
                 return new Info(cf.isInterface(),
-                        (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass);
+                        (cf.accessFlags & ClassFile.ACC_FINAL) != 0, cf.superClass,
+                        permittedOf(cf));
             } catch (Exception e) {
                 // A root holding a broken file is not a reason to claim the
                 // class does not exist; fall through to the next source.
@@ -105,14 +110,46 @@ public final class Hierarchy {
                 // reflection at its word made every interface typed value
                 // fail to be assignable to Object, which is most of
                 // java.lang.String.
-                return new Info(true, false, OBJECT);
+                return new Info(true, false, OBJECT, permittedOf(c));
             }
             boolean fin = java.lang.reflect.Modifier.isFinal(c.getModifiers());
             return new Info(c.isInterface(), fin,
-                    s == null ? null : s.getName().replace('.', '/'));
+                    s == null ? null : s.getName().replace('.', '/'), permittedOf(c));
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
         }
+    }
+
+    /** The PermittedSubclasses attribute, read with our own parser. */
+    private static String[] permittedOf(ClassFile cf) {
+        ClassFile.Attr a = null;
+        for (ClassFile.Attr x : cf.attrs) if (x.name.equals("PermittedSubclasses")) a = x;
+        if (a == null) return null;
+        try {
+            Buf b = new Buf(a.data);
+            String[] out = new String[b.u2()];
+            for (int i = 0; i < out.length; i++) out[i] = cf.pool.className(b.u2());
+            return out;
+        } catch (ClassFormatException e) {
+            // A sealed class whose list cannot be read is not a class whose
+            // list is empty, and saying "not permitted" here would reject
+            // every subclass of it.  Treating it as unsealed is the same
+            // answer classv gave before the check existed.
+            return null;
+        }
+    }
+
+    private static String[] permittedOf(Class<?> c) {
+        Class<?>[] ps = c.getPermittedSubclasses();
+        if (ps == null) return null;
+        String[] out = new String[ps.length];
+        for (int i = 0; i < ps.length; i++) out[i] = ps[i].getName().replace('.', '/');
+        return out;
+    }
+
+    /** null where the class is not sealed. */
+    public String[] permittedSubclasses(String name) throws Refusal {
+        return info(name).permitted;
     }
 
     public boolean isInterface(String name) throws Refusal { return info(name).isInterface; }

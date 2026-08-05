@@ -192,7 +192,19 @@ public final class Verifier {
      * as an agreed rejection in a different category.
      */
     private Result superclassRules() throws Refusal {
+        // Sealing is checked against every direct supertype, interfaces
+        // included: HotSpot says "cannot extend sealed interface" for those
+        // and "cannot inherit from sealed class" for a superclass.
+        for (String i : cf.interfaces) {
+            // HotSpot's own wording: an interface extends, a class
+            // implements, and both are the same rule.
+            Result r = sealing(i, (cf.isInterface() ? "extend" : "implement")
+                    + " sealed interface");
+            if (r != null) return r;
+        }
         if (cf.superClassIndex == 0) return null;
+        Result r = sealing(cf.superClass, "inherit from sealed class");
+        if (r != null) return r;
         if (h.isInterface(cf.superClass))
             return new Result(Kind.FORMAT, cf.thisClass + " has the interface "
                     + cf.superClass + " as its superclass"
@@ -201,6 +213,15 @@ public final class Verifier {
             return new Result(Kind.FORMAT, cf.thisClass + " cannot inherit from the final"
                     + " class " + cf.superClass + " (IncompatibleClassChangeError)");
         return null;
+    }
+
+    private Result sealing(String sup, String what) throws Refusal {
+        String[] permitted = h.permittedSubclasses(sup);
+        if (permitted == null) return null;
+        for (String n : permitted) if (n.equals(cf.thisClass)) return null;
+        return new Result(Kind.FORMAT, cf.thisClass + " cannot " + what + " " + sup
+                + ", which permits only " + String.join(", ", permitted)
+                + " (IncompatibleClassChangeError)");
     }
 
     // ------------------------------------------------------------ one method
