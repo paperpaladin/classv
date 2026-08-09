@@ -137,6 +137,24 @@ public class Probe {
         return b.toString();
     }
 
+    /**
+     * The class a ClassFormatError or an UnsupportedClassVersionError names,
+     * which is not always the one being asked about.  Two shapes:
+     * "... in class file a/b/C" and "a/b/C has been compiled by ...".
+     */
+    static String inClassFile(String m) {
+        if (m == null) return null;
+        int i = m.indexOf("in class file ");
+        if (i >= 0) {
+            String s = m.substring(i + 14).trim();
+            int sp = s.indexOf(' ');
+            return (sp < 0 ? s : s.substring(0, sp)).replace('/', '.');
+        }
+        i = m.indexOf(" has been compiled by ");
+        if (i > 0) return m.substring(0, i).trim().replace('/', '.');
+        return null;
+    }
+
     /** this_class, read out of the file directly: the path need not match. */
     static String nameOf(byte[] b) {
         int cp = 10;
@@ -271,7 +289,22 @@ public class Probe {
                 else
                     out.println("VERIFY\t" + p + "\t" + flat(e));
             } catch (ClassFormatError e) {
-                out.println("FORMAT\t" + p + "\t" + flat(e));
+                // The same trap as the VerifyError above, and it was found
+                // the same way.  Defining a batch of mutants in one loader
+                // means a mutant's superclass can be another mutant, so the
+                // ClassFormatError raised while linking this one can be
+                // about that one: "Invalid length 53253 in LocalVariableTable
+                // in class file com/sun/crypto/provider/SymmetricCipher"
+                // arrived for a file whose own name is something else, and
+                // asking about that file alone gives ACCEPT.  2 of 6000
+                // random mutants, and both would have been recorded as
+                // classv accepting a file the JVM rejects.
+                String blamed = inClassFile(e.getMessage());
+                if (blamed != null && !blamed.equals(name))
+                    out.println("ORACLE_NA\t" + p + "\tClassFormatError about "
+                            + clean(blamed) + ", not this class");
+                else
+                    out.println("FORMAT\t" + p + "\t" + flat(e));
             } catch (ClassCircularityError e) {
                 // A real rejection, and neither a format nor a verification
                 // error.  Kept as its own word rather than folded into either,

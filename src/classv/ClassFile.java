@@ -95,6 +95,8 @@ public final class ClassFile {
         }
         readMembers(b, cf.pool, cf.fields);
         readMembers(b, cf.pool, cf.methods);
+        for (Member m : cf.fields) checkDescriptor(m, false);
+        for (Member m : cf.methods) checkDescriptor(m, true);
         readAttrs(b, cf.pool, cf.attrs);
         cf.trailing = b.remaining();
         for (Member m : cf.methods) {
@@ -123,6 +125,45 @@ public final class ClassFile {
                 throw new ClassFormatException(0, "constant pool entry " + i
                         + " names the class \"" + n + "\", which is not a legal class"
                         + " name (JVMS 4.2.1)");
+        }
+    }
+
+    /**
+     * JVMS 4.3: a field descriptor is one type, a method descriptor is a
+     * parenthesised list and a return type.  HotSpot checks both while
+     * parsing, with the message "Field x in class Y has illegal signature",
+     * so a corrupted descriptor is a ClassFormatError and not something the
+     * verifier reaches later.  Random corruption found it.
+     */
+    private static void checkDescriptor(Member m, boolean method)
+            throws ClassFormatException {
+        String d = m.desc;
+        try {
+            if (!method) {
+                if (VType.fromDescriptor(d) == null)
+                    throw new ClassFormatException(0, "void");
+                return;
+            }
+            if (d.isEmpty() || d.charAt(0) != '(')
+                throw new ClassFormatException(0, "no '('");
+            int i = 1;
+            int[] end = new int[1];
+            while (i < d.length() && d.charAt(i) != ')') {
+                if (VType.fromDescriptor(d.substring(i), end) == null)
+                    throw new ClassFormatException(0, "void as a parameter type");
+                i += end[0];
+            }
+            if (i >= d.length())
+                throw new ClassFormatException(0, "no ')'");
+            String ret = d.substring(i + 1);
+            VType.fromDescriptor(ret, end);         // null is fine: void
+            if (end[0] != ret.length())
+                throw new ClassFormatException(0, "trailing bytes after the return type");
+        } catch (ClassFormatException e) {
+            throw new ClassFormatException(0, (method ? "method " : "field ") + m.name
+                    + " has the descriptor \"" + d + "\", which is not a legal "
+                    + (method ? "method" : "field") + " descriptor (JVMS 4.3): "
+                    + e.getMessage());
         }
     }
 
@@ -319,7 +360,61 @@ public final class ClassFile {
             hs.add(new Handler(b.u2(), b.u2(), b.u2(), b.u2()));
         List<Attr> as = new ArrayList<>();
         readAttrs(b, p, as);
+        for (Attr x : as) checkDebugTable(x, p, (int) clen, maxLocals);
         return new CodeAttr(maxStack, maxLocals, code, hs, as);
+    }
+
+    /**
+     * The debug tables, which HotSpot checks while parsing even though
+     * nothing in the verifier reads them.  Random corruption found five
+     * distinct ClassFormatError messages in this one paragraph of JVMS
+     * 4.7.12 and 4.7.13: a pc past the end of the code, a local index past
+     * max_locals, a name or signature index that is not a Utf8, and a
+     * signature that is not a field descriptor.  They are all the same
+     * shape: an index into something, unchecked.
+     */
+    private static void checkDebugTable(Attr a, ConstantPool p, int codeLen, int maxLocals)
+            throws ClassFormatException {
+        boolean lvt = a.name.equals("LocalVariableTable");
+        boolean lvtt = a.name.equals("LocalVariableTypeTable");
+        if (!lvt && !lvtt && !a.name.equals("LineNumberTable")) return;
+        Buf b = new Buf(a.data);
+        int n = b.u2();
+        for (int i = 0; i < n; i++) {
+            int pc = b.u2();
+            if (pc >= codeLen)
+                throw new ClassFormatException(a.offset, a.name + " entry " + i
+                        + " starts at pc " + pc + " and the code is " + codeLen
+                        + " bytes");
+            if (!lvt && !lvtt) {
+                b.u2();                       // the line number itself
+                continue;
+            }
+            int len = b.u2();
+            if (pc + len > codeLen)
+                throw new ClassFormatException(a.offset, a.name + " entry " + i
+                        + " covers [" + pc + ", " + (pc + len) + ") and the code is "
+                        + codeLen + " bytes");
+            int ni = b.u2();
+            int di = b.u2();
+            int slot = b.u2();
+            if (p.tag(ni) != ConstantPool.UTF8 || p.tag(di) != ConstantPool.UTF8)
+                throw new ClassFormatException(a.offset, a.name + " entry " + i
+                        + " names constant pool entries " + ni + " and " + di
+                        + ", which are not both Utf8");
+            // A LocalVariableTypeTable holds generic SIGNATURES, not
+            // descriptors: "Ljava/util/List<Ljava/lang/String;>;" is a legal
+            // entry there and not a legal field descriptor.  Checking it as
+            // one rejected 2 of 3000 valid classes, which is the only reason
+            // this comment exists.
+            VType t = lvt ? VType.fromDescriptor(p.utf8(di)) : null;
+            if (lvt && t == null)
+                throw new ClassFormatException(a.offset, a.name + " entry " + i
+                        + " has the descriptor V, which is not a field descriptor");
+            if (slot >= maxLocals || (t != null && t.isTwoWord() && slot + 1 >= maxLocals))
+                throw new ClassFormatException(a.offset, a.name + " entry " + i
+                        + " is local " + slot + " and max_locals is " + maxLocals);
+        }
     }
 
     // ---------------------------------------------------------------- flags
@@ -333,9 +428,28 @@ public final class ClassFile {
 
     public boolean isInterface() { return (accessFlags & ACC_INTERFACE) != 0; }
 
+    /**
+     * The return type of a method descriptor.
+     *
+     * Not indexOf(')'): a ')' inside an L...; class name is an ordinary
+     * character of that name, and HotSpot accepts it.  This used to find
+     * the wrong one and then fail to parse the remainder, so classv
+     * rejected a class the JVM accepts, which random corruption found on a
+     * descriptor reading (Ljdk/internal/classf)le/constantpool/ClassEntry;I)V.
+     * The parameter list is walked the same way everything else walks it.
+     */
     public static String descReturn(String desc) throws ClassFormatException {
-        int i = desc.indexOf(')');
-        if (i < 0) throw new ClassFormatException(0, "method descriptor has no ')': " + desc);
+        if (desc.isEmpty() || desc.charAt(0) != '(')
+            throw new ClassFormatException(0, "method descriptor does not start with '(': "
+                    + desc);
+        int i = 1;
+        int[] end = new int[1];
+        while (i < desc.length() && desc.charAt(i) != ')') {
+            VType.fromDescriptor(desc.substring(i), end);
+            i += end[0];
+        }
+        if (i >= desc.length())
+            throw new ClassFormatException(0, "method descriptor has no ')': " + desc);
         return desc.substring(i + 1);
     }
 }

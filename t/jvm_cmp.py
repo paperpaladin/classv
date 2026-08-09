@@ -161,9 +161,9 @@ class Tally:
             self.bci_diff.append('%s: the JVM says @%s, classv says @%s | %s'
                                  % (path, j.group(2), c.group(2), cm[:150]))
 
-    def report(self, label):
+    def report(self, label, accept_word='FAIL'):
         for m in self.false_accept[:10]:
-            print('FAIL false accept %s' % m)
+            print('%s false accept %s' % (accept_word, m))
         for m in self.false_reject[:10]:
             print('FAIL false reject %s' % m)
         print('--- %s: %d agree accept, %d agree reject (%d in the same category), '

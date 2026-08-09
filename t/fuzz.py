@@ -13,13 +13,29 @@ Every mutant is generated from a seeded Random, and the digest printed is of
 the mutant bytes themselves, not of the report about them: a seed that was
 ignored would show as the same digest for every seed.
 
-usage: fuzz.py 'CLASSV CMD' SOURCELIST N SEED OUTDIR
+With a probe command, every mutant also goes to the JVM and the verdicts
+are compared.  That happens in chunks of one mutant per source class,
+because the probe defines a whole batch in one class loader and two files
+claiming the same name would collide: the mutants are generated round
+robin over the sources, so a chunk the size of the source list holds each
+name once.  Without the chunking, 5877 of 6000 mutants came back with no
+opinion from the JVM.
+
+The false accepts that comparison still finds are a ratchet rather than a
+gate: the count is passed in, the run fails above it, and every commit that
+closes one of the remaining rule families lowers it.  A plain gate would
+have to be written at zero, and it cannot be zero yet.
+
+usage: fuzz.py 'CLASSV CMD' SOURCELIST N SEED OUTDIR ['PROBE CMD' [ROOTS [MAXFA]]]
 """
 import hashlib
 import os
 import random
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import jvm_cmp    # noqa: E402
 
 WORDS = ('OK', 'VERIFY', 'FORMAT', 'REFUSE', 'INTERNAL')
 
@@ -121,7 +137,39 @@ def main():
               % (one.returncode, one.stdout.strip()[:200].replace('\n', ' | '),
                  one.stderr.strip()[:400].replace('\n', ' | ')))
         bad += 1
-    print('FUZZ_PASS %d' % len(verdicts))
+    npass = len(verdicts)
+    if len(sys.argv) > 6:
+        probe_cmd = sys.argv[6]
+        roots = sys.argv[7] if len(sys.argv) > 7 else ''
+        t = jvm_cmp.Tally()
+        step = len(sources)
+        for start in range(0, len(paths), step):
+            chunk = paths[start:start + step]
+            sub = os.path.join(outdir, 'chunk.txt')
+            with open(sub, 'w') as f:
+                f.write('\n'.join(chunk) + '\n')
+            jvm_cmp.compare(sub, 'define', classv_cmd, probe_cmd, t, roots)
+        # The false accepts are printed as notes, because the ratchet below
+        # decides whether they fail the run; the false rejects and the bci
+        # disagreements are printed as failures, because those are zero.
+        t.report('random corruption', 'note')
+        npass += t.agree_accept + t.agree_reject
+        maxfa = int(sys.argv[8]) if len(sys.argv) > 8 else 0
+        nfa = len(t.false_accept)
+        print('--- random corruption: %d false accepts, and the run fails above %d'
+              % (nfa, maxfa))
+        if nfa > maxfa:
+            print('FAIL random corruption: %d false accepts, %d allowed' % (nfa, maxfa))
+            bad += 1
+        bad += len(t.false_reject) + len(t.bci_diff)
+        if t.agree_reject < 50:
+            # The JVM has no opinion on most randomly corrupted files, so
+            # this comparison can quietly shrink to nothing while still
+            # reporting thousands of mutants.
+            print('FAIL only %d random mutants were rejected by both sides'
+                  % t.agree_reject)
+            bad += 1
+    print('FUZZ_PASS %d' % npass)
     print('FUZZ_FAIL %d' % bad)
     sys.exit(1 if bad else 0)
 

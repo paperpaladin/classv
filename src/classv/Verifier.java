@@ -100,13 +100,14 @@ public final class Verifier {
             Result load = superclassRules();
             if (load != null) return load;
             for (ClassFile.Member m : cf.methods) {
+                int flags = methodFlags(m);
                 if (m.code == null) {
-                    if ((m.flags & (ClassFile.ACC_NATIVE | ClassFile.ACC_ABSTRACT)) == 0)
+                    if ((flags & (ClassFile.ACC_NATIVE | ClassFile.ACC_ABSTRACT)) == 0)
                         return new Result(Kind.FORMAT, "method " + m.name + m.desc
                                 + " is neither native nor abstract and has no Code attribute");
                     continue;
                 }
-                if ((m.flags & (ClassFile.ACC_NATIVE | ClassFile.ACC_ABSTRACT)) != 0)
+                if ((flags & (ClassFile.ACC_NATIVE | ClassFile.ACC_ABSTRACT)) != 0)
                     return new Result(Kind.FORMAT, "method " + m.name + m.desc
                             + " is native or abstract and has a Code attribute");
                 try {
@@ -123,6 +124,19 @@ public final class Verifier {
         } catch (Refusal e) {
             return new Result(Kind.REFUSE, e.getMessage());
         }
+    }
+
+    /**
+     * JVMS 4.6: from class file version 51 a class initialiser's access
+     * flags are ignored except for ACC_STATIC, and HotSpot does exactly
+     * that, so setting ACC_ABSTRACT on a <clinit> is accepted by the JVM
+     * and was rejected by classv.  Random corruption found it twice in one
+     * run of 2000, which makes it the most frequent false reject here.
+     */
+    private int methodFlags(ClassFile.Member m) {
+        if (m.name.equals("<clinit>") && cf.major >= 51)
+            return m.flags & (ClassFile.ACC_STATIC | ClassFile.ACC_STRICT);
+        return m.flags;
     }
 
     /**
@@ -263,7 +277,7 @@ public final class Verifier {
         f.sp = 0;
         java.util.Arrays.fill(f.locals, VType.TOP);
         int n = 0;
-        if ((m.flags & ClassFile.ACC_STATIC) == 0) {
+        if ((methodFlags(m) & ClassFile.ACC_STATIC) == 0) {
             VType self;
             if (m.name.equals("<init>")) {
                 if (cf.thisClass.equals("java/lang/Object")) {
