@@ -80,6 +80,7 @@ public final class ClassFile {
         cf.minor = b.u2();
         cf.major = b.u2();
         cf.pool = readPool(b);
+        checkPoolRefs(cf.pool);
         checkClassNames(cf.pool);
         cf.accessFlags = b.u2();
         cf.thisClassIndex = b.u2();
@@ -104,6 +105,71 @@ public final class ClassFile {
             if (a != null) m.code = readCode(a, cf.pool);
         }
         return cf;
+    }
+
+    /**
+     * Every index one constant pool entry holds into another, JVMS 4.4.
+     * HotSpot checks these while parsing and says "Invalid constant pool
+     * index 30218" or "Bad method handle kind"; classv checked them only
+     * where it happened to follow one, so a Fieldref pointing at a Utf8
+     * went unnoticed unless an instruction used it.  Six of the families
+     * random corruption was still finding were this.
+     */
+    private static void checkPoolRefs(ConstantPool p) throws ClassFormatException {
+        for (int i = 1; i < p.count; i++) {
+            switch (p.tag(i)) {
+                case ConstantPool.CLASS: case ConstantPool.STRING:
+                case ConstantPool.METHODTYPE: case ConstantPool.MODULE:
+                case ConstantPool.PACKAGE:
+                    poolRef(p, i, p.x(i), ConstantPool.UTF8);
+                    break;
+                case ConstantPool.FIELDREF: case ConstantPool.METHODREF:
+                case ConstantPool.INTERFACEMETHODREF:
+                    poolRef(p, i, p.x(i), ConstantPool.CLASS);
+                    poolRef(p, i, p.y(i), ConstantPool.NAMEANDTYPE);
+                    break;
+                case ConstantPool.NAMEANDTYPE:
+                    poolRef(p, i, p.x(i), ConstantPool.UTF8);
+                    poolRef(p, i, p.y(i), ConstantPool.UTF8);
+                    break;
+                case ConstantPool.DYNAMIC: case ConstantPool.INVOKEDYNAMIC:
+                    // x is an index into the BootstrapMethods attribute,
+                    // which is not a constant pool index and is checked
+                    // where that attribute is read.
+                    poolRef(p, i, p.y(i), ConstantPool.NAMEANDTYPE);
+                    break;
+                case ConstantPool.METHODHANDLE: {
+                    int kind = p.x(i);
+                    if (kind < 1 || kind > 9)
+                        throw new ClassFormatException(0, "constant pool entry " + i
+                                + " is a MethodHandle of kind " + kind
+                                + ", and the kinds are 1 to 9 (JVMS 4.4.8)");
+                    int t = p.tag(p.y(i));
+                    boolean field = kind <= 4;
+                    boolean ok = field ? t == ConstantPool.FIELDREF
+                            : (t == ConstantPool.METHODREF
+                               || t == ConstantPool.INTERFACEMETHODREF);
+                    if (!ok)
+                        throw new ClassFormatException(0, "constant pool entry " + i
+                                + " is a MethodHandle of kind " + kind + " naming entry "
+                                + p.y(i) + ", which is " + ConstantPool.tagName(t)
+                                + " and not a " + (field ? "Fieldref" : "method reference"));
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
+    private static void poolRef(ConstantPool p, int from, int to, int tag)
+            throws ClassFormatException {
+        if (p.tag(to) != tag)
+            throw new ClassFormatException(0, "constant pool entry " + from + ", a "
+                    + ConstantPool.tagName(p.tag(from)) + ", names entry " + to
+                    + ", which is " + (p.valid(to) ? ConstantPool.tagName(p.tag(to))
+                                                   : "out of range or unusable")
+                    + " where " + ConstantPool.tagName(tag) + " is required");
     }
 
     /**
@@ -292,6 +358,7 @@ public final class ClassFile {
             int off = b.pos();
             Attr a = new Attr(p.utf8(ni), b.bytes((int) len), off);
             checkAttrLength(a, off);
+            checkAttrIndexes(a, p, off);
             out.add(a);
         }
     }
@@ -328,6 +395,88 @@ public final class ClassFile {
             throw new ClassFormatException(off, a.name + " says it holds " + count
                     + " entries of " + entry + " bytes, which needs " + want
                     + " bytes, and the attribute is " + a.data.length);
+    }
+
+    /**
+     * Attributes are mostly constant pool indexes, and an index of the wrong
+     * kind is a ClassFormatError in HotSpot while parsing: "inner_name_index
+     * 229 has bad constant type", "Invalid SourceFile attribute at constant
+     * pool index 62952".  Found by random corruption, which reached these
+     * long before it reached anything the verifier does.
+     *
+     * Zero is allowed where the spec allows it and nowhere else, which is
+     * the whole content of several of these rules.
+     */
+    private static void checkAttrIndexes(Attr a, ConstantPool p, int off)
+            throws ClassFormatException {
+        Buf b = new Buf(a.data);
+        switch (a.name) {
+            case "SourceFile": case "Signature":
+                need(p, b.u2(), ConstantPool.UTF8, false, a, off);
+                break;
+            case "NestHost": case "ModuleMainClass":
+                need(p, b.u2(), ConstantPool.CLASS, false, a, off);
+                break;
+            case "ConstantValue": {
+                int i = b.u2();
+                int t = p.tag(i);
+                if (t != ConstantPool.INTEGER && t != ConstantPool.FLOAT
+                        && t != ConstantPool.LONG && t != ConstantPool.DOUBLE
+                        && t != ConstantPool.STRING)
+                    throw new ClassFormatException(off, "ConstantValue names constant pool"
+                            + " entry " + i + ", which is "
+                            + ConstantPool.tagName(t) + " and not a constant");
+                break;
+            }
+            case "EnclosingMethod":
+                need(p, b.u2(), ConstantPool.CLASS, false, a, off);
+                need(p, b.u2(), ConstantPool.NAMEANDTYPE, true, a, off);
+                break;
+            case "Exceptions": case "NestMembers": case "PermittedSubclasses": {
+                int n = b.u2();
+                for (int i = 0; i < n; i++) need(p, b.u2(), ConstantPool.CLASS, false, a, off);
+                break;
+            }
+            case "InnerClasses": {
+                int n = b.u2();
+                for (int i = 0; i < n; i++) {
+                    need(p, b.u2(), ConstantPool.CLASS, false, a, off);
+                    need(p, b.u2(), ConstantPool.CLASS, true, a, off);
+                    need(p, b.u2(), ConstantPool.UTF8, true, a, off);
+                    b.u2();                       // the inner class's own flags
+                }
+                break;
+            }
+            case "MethodParameters": {
+                int n = b.u1();
+                for (int i = 0; i < n; i++) {
+                    need(p, b.u2(), ConstantPool.UTF8, true, a, off);
+                    b.u2();
+                }
+                break;
+            }
+            case "BootstrapMethods": {
+                int n = b.u2();
+                for (int i = 0; i < n; i++) {
+                    need(p, b.u2(), ConstantPool.METHODHANDLE, false, a, off);
+                    int na = b.u2();
+                    for (int k = 0; k < na; k++) b.u2();
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    private static void need(ConstantPool p, int i, int tag, boolean zeroOk, Attr a, int off)
+            throws ClassFormatException {
+        if (i == 0 && zeroOk) return;
+        if (p.tag(i) != tag)
+            throw new ClassFormatException(off, a.name + " names constant pool entry " + i
+                    + ", which is " + (p.valid(i) ? ConstantPool.tagName(p.tag(i))
+                                                  : "out of range or unusable")
+                    + " where " + ConstantPool.tagName(tag) + " is required");
     }
 
     /** The one variable shape attribute whose walk is three lines. */

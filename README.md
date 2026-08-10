@@ -346,12 +346,12 @@ chunking 5877 of 6000 came back with no opinion, because the probe defines
 a whole batch at once; with it, 610 of 2000 get a verdict from both sides.
 
 ```
---- random corruption: 118 agree accept, 492 agree reject (473 in the same
-    category), 18 false accept, 0 false reject
---- random corruption: 18 false accepts, and the run fails above 18
+--- random corruption: 118 agree accept, 503 agree reject (484 in the same
+    category), 7 false accept, 0 false reject
+--- random corruption: 7 false accepts, and the run fails above 7
 ```
 
-The 18 are a ratchet rather than a gate, and what is left in them is listed
+The 7 are a ratchet rather than a gate, and what is left in them is listed
 under what does not work. Every other number there is a gate at zero.
 
 2000 mutants per run from a fixed seed, and 8000 across two seeds by hand:
@@ -493,16 +493,14 @@ has shown the JVM to be reachable on, each with the HotSpot diagnosis it was
 added for. A malformed class file that no recipe produces may well be
 accepted.
 
-**18 of 610 randomly corrupted class files are accepted by classv and
+**7 of 621 randomly corrupted class files are accepted by classv and
 rejected by the JVM.** They are structural rules HotSpot applies while
-parsing, and the families left are: an `InnerClasses` entry whose
-`inner_name_index` or `outer_class_info_index` is not the constant type it
-should be, a `SourceFile` attribute pointing at something that is not a
-Utf8, a constant pool index out of range inside an attribute classv does
-not decode, a class name inside a descriptor that is empty or holds an
-illegal character, a method handle of an impossible kind, and
-`ACC_MODULE` set on something that is not a module. The suite fails if that
-count rises.
+parsing. The families left: an unqualified name that is not legal for a
+field or a method, an illegal combination of access flags, a class name
+inside a descriptor that is empty or holds an illegal character, the
+fourth operand byte of `invokeinterface` when it is not zero, `ACC_MODULE`
+on something that is not a module, and the `Record` attribute, whose
+contents are not decoded at all. The suite fails if that count rises.
 
 **Attributes still parsed as opaque bytes**: `Record`, `Module`, and the
 annotation attributes. Their contents are unchecked, and the only reason

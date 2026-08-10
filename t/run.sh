@@ -497,7 +497,7 @@ awk 'NR % 19 == 1' "$work/corpus.txt" | head -400 > "$work/fuzzsrc.txt"
 # lists what is still in it.
 out=$(python3 "$here/fuzz.py" "java -cp $root/build classv.Main --cp $work/jdk/java.base" \
 	"$work/fuzzsrc.txt" "${CLASSV_FUZZ_N:-2000}" "${CLASSV_FUZZ_SEED:-1}" "$work/fuzz" \
-	"java -cp $work/probe Probe" "$work/jdk/java.base" "${CLASSV_FUZZ_MAXFA:-18}")
+	"java -cp $work/probe Probe" "$work/jdk/java.base" "${CLASSV_FUZZ_MAXFA:-7}")
 echo "$out" | grep -v '^FUZZ_'
 p=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_PASS //p')
 f=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_FAIL //p')
