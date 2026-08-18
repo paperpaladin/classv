@@ -22,6 +22,7 @@ class Attr:
 class Method:
     def __init__(self):
         self.flags = 0
+        self.flags_off = 0
         self.name = None
         self.desc = None
         self.attrs = []
@@ -122,6 +123,7 @@ class ClassFile:
         out = []
         for _ in range(n):
             m = Method()
+            m.flags_off = p
             m.flags = self.u2(p)
             m.name = self.name_of(self.u2(p + 2))
             m.desc = self.name_of(self.u2(p + 4))

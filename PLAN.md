@@ -255,11 +255,16 @@ Ranked by how little of them we control:
       mutants have a verdict from the JVM and it was not being asked for.
       done: 610 of 2000 answered by both, 18 false accepts left as a
       ratchet the suite fails above, 0 false rejects.
-- [ ] Close the remaining 18: InnerClasses index types, SourceFile index,
-      constant pool indexes inside undecoded attributes, class names inside
-      descriptors, method handle kinds, ACC_MODULE
-      why: they are the last families the random corruption comparison
-      reports, and each is a rule HotSpot applies while parsing.
+- [x] Access flag rules, JVMS 4.1, 4.5 and 4.6
+      why: 62 of 210 flag variants were accepted by classv and rejected by
+      the JVM, and the rules are version dependent in places.
+      done: t/flag_cases.py, a sweep over 35 flag values in three places in
+      two fixtures, 0 disagreements.
+- [ ] Close the last of the random corruption false accepts: unqualified
+      names for fields and methods, class names inside descriptors, the
+      fourth operand byte of invokeinterface, the Record attribute
+      why: 7 of 621 at the default seed, and the suite ratchets on that
+      number.
 - [x] A sealed supertype permits a fixed list of subclasses, JVMS 5.3.5
       why: 6 of the 9 false accepts left after the other checks, all of
       them a corrupted class name falling out of a PermittedSubclasses list.

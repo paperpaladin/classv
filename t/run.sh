@@ -184,6 +184,25 @@ for kind in iface final; do
 	fi
 done
 
+# Access flags, JVMS 4.1, 4.5 and 4.6.  Each rule there is one sentence and
+# the set of them is easy to half implement, so they are not checked against
+# a table written here: the flags of a class, a field and a method, in both
+# a class fixture and an interface fixture, are set to 35 values in turn and
+# the JVM says which are legal.
+javac -d "$work/flg" "$here/fixtures/Flg.java" "$here/fixtures/Ifc.java" 2>/dev/null
+python3 "$here/flag_cases.py" "$work/flags" "$work/flg/Flg.class" "$work/flg/Ifc.class" \
+	|| { echo "cannot build the flag cases"; exit 2; }
+out=$(python3 "$here/jvm_cmp.py" "$work/flags/list.txt" define \
+	"java -cp $root/build classv.Main --cp $work/flags" \
+	"java -cp $work/probe Probe" verdict "$work/flags")
+printf '%s\n' "$out" | grep -v '^JVM_' | sed "s/^--- the JVM vs classv/--- flag sweep/"
+p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
+f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
+[ -n "$p" ] || { echo "the flag sweep produced no count"; exit 2; }
+[ "$p" -ge 150 ] || { echo "the flag sweep answered about only $p variants"; exit 2; }
+pass=$((pass + p))
+fail=$((fail + f))
+
 # Sealing, JVMS 5.3.5 again: a sealed supertype permits a fixed list of
 # subclasses.  Built the same way as the two above, by compiling Sub against
 # an unsealed I and then putting a sealed I beside it.

@@ -84,10 +84,24 @@ public final class Verifier {
 
     public Result verify() {
         try {
-            Result structural = structure();
-            if (structural != null) return structural;
+            // The version comes first, and the structural rules after it,
+            // because several of those rules are version dependent in
+            // HotSpot and classv has no algorithm for an old class file
+            // anyway.  An interface without ACC_ABSTRACT is legal at
+            // version 49 and illegal from 50, which is how this order was
+            // arrived at: 31 package-info.class files in one jar are
+            // exactly that, and checking the rule before the refusal turned
+            // them into a FORMAT answer the JVM disagreed with.
+            Result tooNew = versionGate();
+            if (tooNew != null) return tooNew;
             if ((cf.accessFlags & ClassFile.ACC_MODULE) != 0)
-                return new Result(Kind.REFUSE, "this is a module descriptor, not a class");
+                // Not a refusal.  Asked to load this as a class the JVM
+                // says "is not a class because access_flag ACC_MODULE is
+                // set" and refuses to have it, so the answer is a
+                // rejection and classv used to decline to give one.
+                return new Result(Kind.FORMAT, cf.thisClass + " has ACC_MODULE set, so"
+                        + " it is a module descriptor and not a class"
+                        + " (NoClassDefFoundError)");
             if (cf.major < 50)
                 return new Result(Kind.REFUSE, "class file version " + cf.major + "."
                         + cf.minor + " predates the StackMapTable attribute, so the JVM"
@@ -97,6 +111,8 @@ public final class Verifier {
                         + " where the JVM retries with the type inference verifier if type"
                         + " checking fails, so a rejection here would not predict the JVM's"
                         + " answer");
+            Result structural = structure();
+            if (structural != null) return structural;
             Result load = superclassRules();
             if (load != null) return load;
             for (ClassFile.Member m : cf.methods) {
@@ -145,7 +161,7 @@ public final class Verifier {
      * be reachable are here, each with the JVM diagnosis it was added for;
      * this is not a complete class file validator and the README says so.
      */
-    private Result structure() throws ClassFormatException {
+    private Result versionGate() {
         // The version the running JVM supports, not a constant: the oracle is
         // this JVM, and a class file one release too new is rejected by it
         // and would be accepted by the next one.
@@ -171,6 +187,17 @@ public final class Verifier {
         if (cf.major < 45)
             return new Result(Kind.FORMAT, "class file version " + cf.major
                     + " predates the first one, 45");
+        return null;
+    }
+
+    /**
+     * The load time structural rules, JVMS 4.1 and 5.3.5, that the JVM
+     * applies before the verifier runs.  Only the ones a mutation sweep has
+     * shown to be reachable are here, each with the JVM diagnosis it was
+     * added for; this is not a complete class file validator and the README
+     * says so.
+     */
+    private Result structure() throws ClassFormatException {
         if (cf.superClassIndex != 0 && cf.superClass.equals(cf.thisClass))
             return new Result(Kind.FORMAT, cf.thisClass + " is its own superclass"
                     + " (ClassCircularityError)");
@@ -191,7 +218,101 @@ public final class Verifier {
         if ((cf.accessFlags & ClassFile.ACC_FINAL) != 0
                 && (cf.accessFlags & ClassFile.ACC_ABSTRACT) != 0)
             return new Result(Kind.FORMAT, "a class cannot be both final and abstract");
+        Result f = flagRules();
+        if (f != null) return f;
         return null;
+    }
+
+    /**
+     * The access flag rules of JVMS 4.1, 4.5 and 4.6.  Each is a sentence in
+     * the spec and the set of them is easy to half implement, so they were
+     * not written from the table: t/flag_cases.py sets the flags of a class,
+     * a field and a method of each of a class and an interface fixture to 35
+     * values in turn, and the JVM says which are legal.  62 of 210 were
+     * accepted by classv and rejected by the JVM before this.
+     */
+    private Result flagRules() {
+        int a = cf.accessFlags;
+        boolean iface = cf.isInterface();
+        if (iface) {
+            if ((a & ClassFile.ACC_ABSTRACT) == 0)
+                return new Result(Kind.FORMAT, "an interface must be abstract");
+            int forbidden = a & (ClassFile.ACC_FINAL | ClassFile.ACC_SUPER
+                    | ClassFile.ACC_ENUM | ClassFile.ACC_MODULE);
+            if (forbidden != 0)
+                return new Result(Kind.FORMAT, String.format(
+                        "an interface cannot be final, super, enum or module (0x%x)",
+                        forbidden));
+        } else if ((a & ClassFile.ACC_ANNOTATION) != 0) {
+            return new Result(Kind.FORMAT, "a class that is not an interface cannot be"
+                    + " an annotation type");
+        }
+        for (ClassFile.Member m : cf.fields) {
+            if (manyAccess(m.flags))
+                return new Result(Kind.FORMAT, String.format(
+                        "field %s has more than one access modifier (0x%x)",
+                        m.name, m.flags));
+            if ((m.flags & ClassFile.ACC_FINAL) != 0
+                    && (m.flags & ClassFile.ACC_VOLATILE) != 0)
+                return new Result(Kind.FORMAT, "field " + m.name
+                        + " is both final and volatile");
+            if (iface) {
+                int want = ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL;
+                if ((m.flags & want) != want
+                        || (m.flags & ~(want | ClassFile.ACC_SYNTHETIC)) != 0)
+                    return new Result(Kind.FORMAT, String.format(
+                            "field %s of an interface must be public static final and"
+                            + " nothing else (0x%x)", m.name, m.flags));
+            }
+        }
+        for (ClassFile.Member m : cf.methods) {
+            int f = methodFlags(m);
+            if (m.name.equals("<clinit>")) continue;
+            if (manyAccess(f))
+                return new Result(Kind.FORMAT, String.format(
+                        "method %s%s has more than one access modifier (0x%x)",
+                        m.name, m.desc, f));
+            if ((f & ClassFile.ACC_ABSTRACT) != 0) {
+                int bad = f & (ClassFile.ACC_PRIVATE | ClassFile.ACC_STATIC
+                        | ClassFile.ACC_FINAL | ClassFile.ACC_SYNCHRONIZED
+                        | ClassFile.ACC_NATIVE);
+                if (bad != 0)
+                    return new Result(Kind.FORMAT, String.format(
+                            "abstract method %s%s cannot also be private, static, final,"
+                            + " synchronized or native (0x%x)", m.name, m.desc, bad));
+            }
+            if (iface) {
+                int bad = f & (ClassFile.ACC_PROTECTED | ClassFile.ACC_FINAL
+                        | ClassFile.ACC_SYNCHRONIZED | ClassFile.ACC_NATIVE);
+                if (bad != 0)
+                    return new Result(Kind.FORMAT, String.format(
+                            "method %s%s of an interface cannot be protected, final,"
+                            + " synchronized or native (0x%x)", m.name, m.desc, bad));
+                boolean pub = (f & ClassFile.ACC_PUBLIC) != 0;
+                boolean priv = (f & ClassFile.ACC_PRIVATE) != 0;
+                if (pub == priv)
+                    return new Result(Kind.FORMAT, String.format(
+                            "method %s%s of an interface must be exactly one of public"
+                            + " and private (0x%x)", m.name, m.desc, f));
+            }
+            if (m.name.equals("<init>")) {
+                int allowed = ClassFile.ACC_PUBLIC | ClassFile.ACC_PRIVATE
+                        | ClassFile.ACC_PROTECTED | ClassFile.ACC_VARARGS
+                        | ClassFile.ACC_STRICT | ClassFile.ACC_SYNTHETIC;
+                if ((f & ~allowed) != 0)
+                    return new Result(Kind.FORMAT, String.format(
+                            "a constructor may be public, private, protected, varargs,"
+                            + " strict or synthetic and nothing else (0x%x)", f & ~allowed));
+            }
+        }
+        return null;
+    }
+
+    private static boolean manyAccess(int f) {
+        int n = ((f & ClassFile.ACC_PUBLIC) != 0 ? 1 : 0)
+                + ((f & ClassFile.ACC_PRIVATE) != 0 ? 1 : 0)
+                + ((f & ClassFile.ACC_PROTECTED) != 0 ? 1 : 0);
+        return n > 1;
     }
 
     /**
