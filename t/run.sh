@@ -266,10 +266,14 @@ while read -r name major minor path; do
 done < "$work/vers.cases"
 [ "$nver" -ge 10 ] || { echo "only $nver version cases were run"; exit 2; }
 
-# Class names, JVMS 4.2.1, in both directions: HotSpot rejects a '.' and
-# accepts a space, and a reader who assumed Java identifiers would get both
-# wrong.  The fixture's own name is patched, so the file is otherwise whole.
-python3 "$here/name_cases.py" "$work/uninit/Own.class" "$work/names" > "$work/names.cases" \
+# Names, JVMS 4.2.1 for a class and 4.2.2 for a field or a method, in both
+# directions: HotSpot rejects a '.' and accepts a space, and a reader who
+# assumed Java identifiers would get both wrong.  The same eight byte
+# sequences go into the class's own name, a field's and a method's, because
+# the three rules differ: a '/' is a separator in a class name and illegal
+# in the other two, and a '<' is legal in a field name and not in a method
+# name.
+python3 "$here/name_cases.py" "$work/flg/Flg.class" "$work/names" > "$work/names.cases" \
 	|| { echo "cannot build the class name cases"; exit 2; }
 nname=0
 while read -r name path; do
@@ -278,12 +282,12 @@ while read -r name path; do
 		| cut -d' ' -f1)
 	nname=$((nname + 1))
 	case "$jvm:$ours" in
-	ACCEPT:OK)     ok "both accept the class name case $name" ;;
-	FORMAT:FORMAT) ok "both reject the class name case $name" ;;
-	*)             bad "class name case $name: the JVM says $jvm and classv says $ours" ;;
+	ACCEPT:OK)     ok "both accept the name case $name" ;;
+	FORMAT:FORMAT) ok "both reject the name case $name" ;;
+	*)             bad "name case $name: the JVM says $jvm and classv says $ours" ;;
 	esac
 done < "$work/names.cases"
-[ "$nname" -ge 8 ] || { echo "only $nname class name cases were run"; exit 2; }
+[ "$nname" -ge 24 ] || { echo "only $nname name cases were run"; exit 2; }
 
 # Modified UTF-8, JVMS 4.4.7.  Which of these HotSpot rejects is measured
 # here every run rather than written down once: the cases where it differs
@@ -516,7 +520,7 @@ awk 'NR % 19 == 1' "$work/corpus.txt" | head -400 > "$work/fuzzsrc.txt"
 # lists what is still in it.
 out=$(python3 "$here/fuzz.py" "java -cp $root/build classv.Main --cp $work/jdk/java.base" \
 	"$work/fuzzsrc.txt" "${CLASSV_FUZZ_N:-2000}" "${CLASSV_FUZZ_SEED:-1}" "$work/fuzz" \
-	"java -cp $work/probe Probe" "$work/jdk/java.base" "${CLASSV_FUZZ_MAXFA:-7}")
+	"java -cp $work/probe Probe" "$work/jdk/java.base" "${CLASSV_FUZZ_MAXFA:-3}")
 echo "$out" | grep -v '^FUZZ_'
 p=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_PASS //p')
 f=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_FAIL //p')

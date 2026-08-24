@@ -4,9 +4,14 @@
 // everything after the constant pool.
 class Flg {
     int f;
+    int fld;
 
     void m() {
         f++;
+    }
+
+    int met(int n) {
+        return fld + n;
     }
 
     static int s(int n) {

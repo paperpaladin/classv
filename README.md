@@ -417,17 +417,24 @@ are put to the JVM every run, including the two classv refuses: 49.3, which
 has no StackMapTable, and 50.0, where HotSpot retries with the inference
 verifier if type checking fails.
 
-### Class names
+### Names
 
-HotSpot is laxer about a class name than the language is, so a reader who
-assumed Java identifiers would be wrong in both directions.
-`t/name_cases.py` patches the fixture's own `this_class` name, three bytes
-at a time, and the suite asks the JVM about each case every run.
+HotSpot is laxer about a name than the language is, so a reader who assumed
+Java identifiers would be wrong in both directions, and the three kinds of
+name have three different rules. `t/name_cases.py` puts the same eight byte
+sequences into the class's own name, a field's name and a method's name,
+and the suite asks the JVM about all 24 every run.
 
-Rejected: a `.`, a `;`, a `[` outside an array descriptor, and an empty
-component, which is what `a//`, a leading slash and a trailing slash all
-produce. Accepted: a space, a `<`, a leading digit, and of course an
-ordinary `a/b`.
+A class name rejects `.`, `;`, `[` outside an array descriptor, and an
+empty component, which is what `a//` and a leading or trailing slash
+produce. A field or method name rejects those and `/` as well, because
+there is nothing for a separator to separate. A method name also rejects
+`<` and `>`, with `<init>` and `<clinit>` the two exceptions; in a field
+name both are fine. A space and a leading digit are legal in all three.
+
+The same check runs on the class names inside a descriptor, which is a
+separate HotSpot message: "Class name is empty or contains illegal
+character in descriptor".
 
 ### Modified UTF-8
 
@@ -493,14 +500,12 @@ has shown the JVM to be reachable on, each with the HotSpot diagnosis it was
 added for. A malformed class file that no recipe produces may well be
 accepted.
 
-**7 of 621 randomly corrupted class files are accepted by classv and
+**3 of 625 randomly corrupted class files are accepted by classv and
 rejected by the JVM.** They are structural rules HotSpot applies while
-parsing. The families left: an unqualified name that is not legal for a
-field or a method, an illegal combination of access flags, a class name
-inside a descriptor that is empty or holds an illegal character, the
-fourth operand byte of `invokeinterface` when it is not zero, `ACC_MODULE`
-on something that is not a module, and the `Record` attribute, whose
-contents are not decoded at all. The suite fails if that count rises.
+parsing: the fourth operand byte of `invokeinterface` when it is not zero,
+the `Record` attribute, whose contents are not decoded at all, and a
+truncation classv reads as a complete file. The suite fails if that count
+rises.
 
 **Attributes still parsed as opaque bytes**: `Record`, `Module`, and the
 annotation attributes. Their contents are unchecked, and the only reason

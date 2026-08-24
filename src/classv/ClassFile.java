@@ -96,8 +96,8 @@ public final class ClassFile {
         }
         readMembers(b, cf.pool, cf.fields);
         readMembers(b, cf.pool, cf.methods);
-        for (Member m : cf.fields) checkDescriptor(m, false);
-        for (Member m : cf.methods) checkDescriptor(m, true);
+        for (Member m : cf.fields) checkMember(m, false);
+        for (Member m : cf.methods) checkMember(m, true);
         readAttrs(b, cf.pool, cf.attrs);
         cf.trailing = b.remaining();
         for (Member m : cf.methods) {
@@ -201,8 +201,25 @@ public final class ClassFile {
      * so a corrupted descriptor is a ClassFormatError and not something the
      * verifier reaches later.  Random corruption found it.
      */
-    private static void checkDescriptor(Member m, boolean method)
+    private static void checkMember(Member m, boolean method)
             throws ClassFormatException {
+        // JVMS 4.2.2, measured rather than assumed: a field or method name
+        // may hold a space and may start with a digit, and may not hold
+        // '.', ';', '[' or '/'.  A method name may not hold '<' or '>'
+        // either, with <init> and <clinit> the two exceptions, and for a
+        // field those two characters are perfectly legal.
+        String n = m.name;
+        boolean ok = !n.isEmpty();
+        if (ok && !(method && (n.equals("<init>") || n.equals("<clinit>")))) {
+            for (int i = 0; i < n.length() && ok; i++) {
+                char c = n.charAt(i);
+                ok = !(c == '.' || c == ';' || c == '[' || c == '/'
+                       || (method && (c == '<' || c == '>')));
+            }
+        }
+        if (!ok)
+            throw new ClassFormatException(0, (method ? "method" : "field") + " name \""
+                    + n + "\" is not a legal unqualified name (JVMS 4.2.2)");
         String d = m.desc;
         try {
             if (!method) {

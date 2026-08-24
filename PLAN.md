@@ -260,11 +260,11 @@ Ranked by how little of them we control:
       the JVM, and the rules are version dependent in places.
       done: t/flag_cases.py, a sweep over 35 flag values in three places in
       two fixtures, 0 disagreements.
-- [ ] Close the last of the random corruption false accepts: unqualified
-      names for fields and methods, class names inside descriptors, the
-      fourth operand byte of invokeinterface, the Record attribute
-      why: 7 of 621 at the default seed, and the suite ratchets on that
-      number.
+- [x] Unqualified names and the class names inside descriptors, JVMS 4.2.2
+      why: three different rules for three kinds of name, all measured.
+- [ ] Close the last three: the fourth operand byte of invokeinterface,
+      the Record attribute, and a truncation classv reads as whole
+      why: 3 of 625 at the default seed, and the suite ratchets on it.
 - [x] A sealed supertype permits a fixed list of subclasses, JVMS 5.3.5
       why: 6 of the 9 false accepts left after the other checks, all of
       them a corrupted class name falling out of a PermittedSubclasses list.

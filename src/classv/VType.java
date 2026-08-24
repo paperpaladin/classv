@@ -117,8 +117,17 @@ public final class VType {
                 int semi = d.indexOf(';');
                 if (semi < 0)
                     throw new ClassFormatException(0, "object descriptor has no ';': " + d);
+                String n = d.substring(1, semi);
+                // HotSpot checks the class name inside a descriptor as well
+                // as the ones in the constant pool: "Class name is empty or
+                // contains illegal character in descriptor".  Random
+                // corruption reached this one twice.
+                if (!ClassFile.legalClassName(n))
+                    throw new ClassFormatException(0, "the descriptor " + d
+                            + " holds the class name \"" + n + "\", which is not a legal"
+                            + " class name");
                 end[0] = semi + 1;
-                return object(d.substring(1, semi));
+                return object(n);
             }
             case '[': {
                 int i = 0;
