@@ -128,10 +128,19 @@ public final class ClassFile {
                     poolRef(p, i, p.x(i), ConstantPool.CLASS);
                     poolRef(p, i, p.y(i), ConstantPool.NAMEANDTYPE);
                     break;
-                case ConstantPool.NAMEANDTYPE:
+                case ConstantPool.NAMEANDTYPE: {
                     poolRef(p, i, p.x(i), ConstantPool.UTF8);
                     poolRef(p, i, p.y(i), ConstantPool.UTF8);
+                    // Every NameAndType, not only the ones a Fieldref or a
+                    // Methodref points at, and the kind is decided by the
+                    // descriptor itself: HotSpot rejected a pool holding
+                    // contains:(ljava/lang/Object;)Z for the lower case l,
+                    // with nothing in the class referring to that entry.
+                    String d = p.utf8(p.y(i));
+                    checkNameAndDesc(p.utf8(p.x(i)), d,
+                            !d.isEmpty() && d.charAt(0) == '(');
                     break;
+                }
                 case ConstantPool.DYNAMIC: case ConstantPool.INVOKEDYNAMIC:
                     // x is an index into the BootstrapMethods attribute,
                     // which is not a constant pool index and is checked
@@ -203,6 +212,12 @@ public final class ClassFile {
      */
     private static void checkMember(Member m, boolean method)
             throws ClassFormatException {
+        checkNameAndDesc(m.name, m.desc, method);
+    }
+
+    private static void checkNameAndDesc(String name, String desc, boolean method)
+            throws ClassFormatException {
+        Member m = new Member(0, name, desc, 0, 0, new ArrayList<>());
         // JVMS 4.2.2, measured rather than assumed: a field or method name
         // may hold a space and may start with a digit, and may not hold
         // '.', ';', '[' or '/'.  A method name may not hold '<' or '>'

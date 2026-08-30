@@ -346,12 +346,12 @@ chunking 5877 of 6000 came back with no opinion, because the probe defines
 a whole batch at once; with it, 610 of 2000 get a verdict from both sides.
 
 ```
---- random corruption: 118 agree accept, 503 agree reject (484 in the same
-    category), 7 false accept, 0 false reject
---- random corruption: 7 false accepts, and the run fails above 7
+--- random corruption: 118 agree accept, 507 agree reject (491 in the same
+    category), 1 false accept, 0 false reject
+--- random corruption: 1 false accepts, and the run fails above 1
 ```
 
-The 7 are a ratchet rather than a gate, and what is left in them is listed
+The one left is a ratchet rather than a gate, and what is left in them is listed
 under what does not work. Every other number there is a gate at zero.
 
 2000 mutants per run from a fixed seed, and 8000 across two seeds by hand:
@@ -500,12 +500,15 @@ has shown the JVM to be reachable on, each with the HotSpot diagnosis it was
 added for. A malformed class file that no recipe produces may well be
 accepted.
 
-**3 of 625 randomly corrupted class files are accepted by classv and
-rejected by the JVM.** They are structural rules HotSpot applies while
-parsing: the fourth operand byte of `invokeinterface` when it is not zero,
-the `Record` attribute, whose contents are not decoded at all, and a
-truncation classv reads as a complete file. The suite fails if that count
-rises.
+**1 of 625 randomly corrupted class files is accepted by classv and
+rejected by the JVM, and it is the oracle rather than classv.** A mutant
+defined by a user class loader lands in the unnamed module, so a class that
+implements a sealed interface of `java.base` gets
+`IncompatibleClassChangeError: cannot implement sealed interface` even
+though the file is on that interface's permits list and is otherwise
+untouched. classv does not model modules and the file is not wrong. The
+count is a ratchet the suite fails above, so a real false accept arriving
+next to it still turns the run red.
 
 **Attributes still parsed as opaque bytes**: `Record`, `Module`, and the
 annotation attributes. Their contents are unchecked, and the only reason

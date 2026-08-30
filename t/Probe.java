@@ -56,7 +56,16 @@ public class Probe {
      * Child first, except for java.*, which a user loader may not define at
      * all.  Those go to the parent and are answered about by the boot mode.
      */
+    /** A format error raised while loading some other class in the batch. */
+    static final class Nested extends Error {
+        private static final long serialVersionUID = 1L;
+        final String who;
+        Nested(String who, Throwable cause) { super(cause); this.who = who; }
+    }
+
     static final class Corpus extends ClassLoader {
+        /** The class the question is about; anything else is a dependency. */
+        String asked;
         private final java.util.Map<String, String> index;
         private final List<Path> roots;
         Corpus(java.util.Map<String, String> index, List<Path> roots) {
@@ -101,7 +110,20 @@ public class Probe {
                     } catch (IOException e) {
                         b = null;
                     }
-                    if (b != null) c = defineClass(name, b, 0, b.length);
+                    if (b != null) {
+                        try {
+                            c = defineClass(name, b, 0, b.length);
+                        } catch (ClassFormatError e) {
+                            // Whose file was malformed?  Defining a batch in
+                            // one loader means this one's supertype may be
+                            // another mutant, and a ClassFormatError about
+                            // that one often names nobody at all: "Truncated
+                            // class file" is the whole message.  Marked at
+                            // the point where it is still known.
+                            if (!name.equals(asked)) throw new Nested(name, e);
+                            throw e;
+                        }
+                    }
                 }
                 if (c == null) c = super.loadClass(name, false);
                 if (resolve) resolveClass(c);
@@ -110,6 +132,7 @@ public class Probe {
         }
 
         Class<?> force(String name) throws ClassNotFoundException {
+            asked = name;
             return loadClass(name, false);
         }
     }
@@ -288,6 +311,9 @@ public class Probe {
                             + clean(blamed) + ", not this class");
                 else
                     out.println("VERIFY\t" + p + "\t" + flat(e));
+            } catch (Probe.Nested e) {
+                out.println("ORACLE_NA\t" + p + "\tClassFormatError while loading "
+                        + clean(e.who) + ", not this class: " + flat(e.getCause()));
             } catch (ClassFormatError e) {
                 // The same trap as the VerifyError above, and it was found
                 // the same way.  Defining a batch of mutants in one loader

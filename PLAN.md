@@ -262,9 +262,15 @@ Ranked by how little of them we control:
       two fixtures, 0 disagreements.
 - [x] Unqualified names and the class names inside descriptors, JVMS 4.2.2
       why: three different rules for three kinds of name, all measured.
-- [ ] Close the last three: the fourth operand byte of invokeinterface,
-      the Record attribute, and a truncation classv reads as whole
-      why: 3 of 625 at the default seed, and the suite ratchets on it.
+- [x] Close the last of the random corruption false accepts
+      why: 3 of 625 at the default seed. Two were real (a NameAndType
+      descriptor nothing refers to, and a truncation reported against the
+      wrong file by the oracle) and the one left is the oracle too: a
+      mutant in the unnamed module can never be a permitted subclass of a
+      sealed java.base interface.
+- [ ] The fourth operand byte of invokeinterface, and the Record attribute
+      why: both are unchecked, and random corruption happened not to reach
+      them in the run that is in the README. Neither is hard.
 - [x] A sealed supertype permits a fixed list of subclasses, JVMS 5.3.5
       why: 6 of the 9 false accepts left after the other checks, all of
       them a corrupted class name falling out of a PermittedSubclasses list.
