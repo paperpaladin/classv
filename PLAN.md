@@ -268,9 +268,12 @@ Ranked by how little of them we control:
       wrong file by the oracle) and the one left is the oracle too: a
       mutant in the unnamed module can never be a permitted subclass of a
       sealed java.base interface.
-- [ ] The fourth operand byte of invokeinterface, and the Record attribute
-      why: both are unchecked, and random corruption happened not to reach
-      them in the run that is in the README. Neither is hard.
+- [x] The fourth operand byte of invokeinterface, and the Record attribute
+      why: both were unchecked.
+      done: a new iizero recipe (58 mutants, 55 answered, all rejected by
+      both) and the Record walk, with a record fixture in the attribute
+      sweep. That sweep immediately found the opposite mistake: HotSpot
+      does not check MethodParameters name indexes and classv did.
 - [x] A sealed supertype permits a fixed list of subclasses, JVMS 5.3.5
       why: 6 of the 9 false accepts left after the other checks, all of
       them a corrupted class name falling out of a PermittedSubclasses list.

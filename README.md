@@ -399,8 +399,12 @@ attribute in the Shapes fixture and asks:
 
 rejected by both: `Exceptions`, `InnerClasses`, `LineNumberTable`,
 `LocalVariableTable`, `LocalVariableTypeTable`, `NestMembers`,
-`BootstrapMethods`, `StackMapTable`. Accepted by both: `Code`, `Signature`,
-`SourceFile`, whose first two bytes are not a count at all.
+`BootstrapMethods`, `StackMapTable`, `Record`. Accepted by both: `Code`,
+`Signature`, `SourceFile`, whose first two bytes are not a count at all,
+and `MethodParameters`, whose count is one byte and whose name indexes
+HotSpot does not check: pointing one at a `Float` is accepted. classv
+checked it and had to stop, which the sweep caught on its first run with
+the record fixture.
 
 ### Class file versions
 
@@ -510,11 +514,12 @@ untouched. classv does not model modules and the file is not wrong. The
 count is a ratchet the suite fails above, so a real false accept arriving
 next to it still turns the run red.
 
-**Attributes still parsed as opaque bytes**: `Record`, `Module`, and the
-annotation attributes. Their contents are unchecked, and the only reason
+**Attributes still parsed as opaque bytes**: `Module` and the annotation
+attributes. Their contents are unchecked, and the only reason
 `Record` is not in the length table above is that its entries are not fixed
-size. The attributes whose count determines their length are checked;
-everything inside those entries is not.
+size. The attributes whose count determines their length are checked, `Record`
+and `BootstrapMethods` are walked entry by entry, and everything inside an
+annotation is unread.
 
 **A crash is a result classv prints, not a path it is known not to have.**
 Anything that escapes the analysis of one file is caught, printed as

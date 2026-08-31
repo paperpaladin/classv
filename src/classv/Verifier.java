@@ -1211,6 +1211,12 @@ public final class Verifier {
             throw new Fail(-1, "<init> can only be reached by invokespecial");
 
         if (op == 185) {
+            // JVMS 6.5: the fourth operand byte must be zero.  HotSpot
+            // answers VerifyError, which is why this is here and not in the
+            // decoder with the other shape checks.
+            if (in.c != 0)
+                throw new Fail(-1, "the fourth operand byte of invokeinterface is "
+                        + in.c + " and must be zero");
             int size = 1;
             for (VType t : args) size += t.isTwoWord() ? 2 : 1;
             if (in.b != size)

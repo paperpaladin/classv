@@ -283,6 +283,18 @@ def r_handlertype(c, path, arg):
     return None
 
 
+def r_iizero(c, path, arg):
+    """iizero -- set the fourth operand byte of invokeinterface, which must be 0."""
+    ms = code_methods(c)
+    for mi, pc, mnem in javap_insns(path):
+        if mnem == 'invokeinterface' and mi < len(ms):
+            off = ms[mi].code.code_off + pc + 4
+            if c.u1(off) == 0:
+                c.set_u1(off, 1)
+                return 'invokeinterface fourth operand byte 0 -> 1'
+    return None
+
+
 def r_noinit(c, path, arg):
     """noinit -- drop the super() call from a constructor, so that this is
     still uninitialized when the constructor returns."""
@@ -331,6 +343,7 @@ def r_swapcode(c, path, arg):
 
 RECIPES = {
     'noinit': r_noinit,
+    'iizero': r_iizero,
     'branch': r_branch,
     'iicount': r_iicount,
     'smtitem': r_smtitem,

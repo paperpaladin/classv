@@ -110,6 +110,7 @@ public final class Op {
         public boolean wide;
         public int len;         // total bytes including the 0xc4 of a wide prefix
         public int a, b;        // first and second operand, meaning per layout
+        public int c;           // the fourth byte of invokeinterface, which must be 0
         public int defaultTarget, low, high;
         public int[] keys;
         public int[] targets;
@@ -157,7 +158,7 @@ public final class Op {
                     case BR2: in.a = in.pc + b.s2(); break;
                     case BR4: in.a = in.pc + b.s4(); break;
                     case NEWARRAY: in.a = b.u1(); break;
-                    case IINTF: in.a = b.u2(); in.b = b.u1(); b.u1(); break;
+                    case IINTF: in.a = b.u2(); in.b = b.u1(); in.c = b.u1(); break;
                     case INDY: in.a = b.u2(); b.u2(); break;
                     case MULTI: in.a = b.u2(); in.b = b.u1(); break;
                     case TABLE: {

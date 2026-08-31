@@ -479,14 +479,10 @@ public final class ClassFile {
                 }
                 break;
             }
-            case "MethodParameters": {
-                int n = b.u1();
-                for (int i = 0; i < n; i++) {
-                    need(p, b.u2(), ConstantPool.UTF8, true, a, off);
-                    b.u2();
-                }
-                break;
-            }
+            // MethodParameters is deliberately not here.  Pointing one of
+            // its name indexes at something that is not a Utf8 is accepted
+            // by HotSpot, so checking it rejected a class file the JVM
+            // takes, which the attribute sweep caught on the first run.
             case "BootstrapMethods": {
                 int n = b.u2();
                 for (int i = 0; i < n; i++) {
@@ -494,6 +490,32 @@ public final class ClassFile {
                     int na = b.u2();
                     for (int k = 0; k < na; k++) b.u2();
                 }
+                break;
+            }
+            case "Record": {
+                // The one attribute whose entries hold attributes of their
+                // own, so the walk is the check: a component is a name, a
+                // descriptor and its own attribute table, and the whole
+                // thing must end exactly where the attribute does.
+                int n = b.u2();
+                for (int i = 0; i < n; i++) {
+                    need(p, b.u2(), ConstantPool.UTF8, false, a, off);
+                    need(p, b.u2(), ConstantPool.UTF8, false, a, off);
+                    int na = b.u2();
+                    for (int k = 0; k < na; k++) {
+                        b.u2();
+                        long l = b.u4();
+                        if (l > b.remaining())
+                            throw new ClassFormatException(off, "an attribute of record"
+                                    + " component " + i + " claims " + l + " bytes and "
+                                    + b.remaining() + " remain");
+                        b.skip((int) l);
+                    }
+                }
+                if (b.remaining() != 0)
+                    throw new ClassFormatException(off, "Record holds " + n
+                            + " components and then " + b.remaining()
+                            + " bytes that are not part of any of them");
                 break;
             }
             default:
