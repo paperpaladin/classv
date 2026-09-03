@@ -233,9 +233,11 @@ Ranked by how little of them we control:
       the subclass. Two three-line classes show the difference.
       done: t/fixtures/Uninit.java, checked against HotSpot's own answer
       including the bci. The sweep's bci divergences are now 0 of 1698.
-- [ ] Report the failing instruction, the frame at it, and the rule it broke
+- [x] Report the failing instruction, the frame at it, and the rule it broke
       why: "Bad type on operand stack" with no further explanation is the
       reason this program is worth writing.
+      done: the frame as the instruction found it, printed under every
+      rejection, asserted by the suite over 60 mutated corpus classes.
 - [x] Compare the reported bci against the bci in the JVM's own message
       why: the JVM prints `Location: A.f()I @2: ireturn`, so the claim
       "we name the same instruction" has an oracle and should be measured.
@@ -244,9 +246,11 @@ Ranked by how little of them we control:
       instead of its Location line, 79 are classes with several broken
       methods where HotSpot's sorted method order picks a different one,
       and 3 are real divergences, which are the next two items.
-- [ ] Print the merge that failed, not just the frame
+- [x] Print the merge that failed, not just the frame
       why: a frame mismatch at a branch target is two frames and a target,
       and printing one of the three is the current state of the art.
+      done: both frames, with the JVM asked to confirm each case is a real
+      rejection.
 
 ### Milestone 4: the parts that are still soft
 

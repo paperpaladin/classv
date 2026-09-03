@@ -35,6 +35,15 @@ defect in classv itself. Three and one are deliberately different numbers,
 and so are five and one: a crash that exits 1 is a crash a harness counts as
 a correct rejection.
 
+```
+$ classv --verify Broken.class
+VERIFY jdk/internal/util/ClassFileDumper.getInstance(Ljava/lang/String;...)... @22:
+    branching to bci 59: the operand stack has 0 slots here and the declared
+    frame has 1
+    frame here: locals[class java/lang/String, class java/lang/String, ...] stack[]
+    frame declared: locals[class java/lang/String, ...] stack[class java/lang/Runnable]
+```
+
 ## Why this exists
 
 `java.lang.VerifyError: Bad type on operand stack`, with nothing after it, is
@@ -329,6 +338,25 @@ Above 50 they are ordinary class files and get the ordinary comparison: 637
 of 640 accepted by both sides, 3 the JVM has no opinion on. One of those is
 a class whose dependency is absent, and classv refuses that one naming the
 same missing type the JVM's `NoClassDefFoundError` names.
+
+### The message
+
+A rejection prints the instruction, the rule and the frame the instruction
+found, and a frame mismatch prints both frames, because a merge that fails
+is two frames and a place and naming one of the three is what the JVM does.
+The frame printed is the one the instruction started with rather than the
+one the rule left behind: a rule that pops three values and then fails
+would otherwise print a frame nothing ever had.
+
+The suite asserts the frames are there rather than trusting the code that
+makes them is reached. It moves a branch offset in 60 corpus classes and
+requires that at least five rejections print a frame and at least one
+prints both; the run that wrote this got 41 and 3, and the JVM is asked
+about each of those three to confirm it rejects them too.
+
+For the bci there is a real oracle and it is used: see the instruction
+comparison above. For the wording of the rest there is none, and the README
+says so rather than inventing one.
 
 ### Corruption, where there is no oracle
 

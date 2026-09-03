@@ -26,14 +26,25 @@ public final class Verifier {
     public static final class Result {
         public final Kind kind;
         public final String message;
-        Result(Kind k, String m) { kind = k; message = m; }
+        /** Lines to print under the message: the frames, where there are any. */
+        public final List<String> detail;
+        Result(Kind k, String m) { this(k, m, new ArrayList<>()); }
+        Result(Kind k, String m, List<String> detail) {
+            kind = k; message = m; this.detail = detail;
+        }
     }
 
     /** A type error: the class would be rejected with a VerifyError. */
     static final class Fail extends Exception {
         private static final long serialVersionUID = 1L;
         final int bci;
+        /** The frames the rule was looking at, printed under the message. */
+        final transient List<String> detail = new ArrayList<>();
         Fail(int bci, String msg) { super(msg); this.bci = bci; }
+        Fail at(String label, Frame f) {
+            if (f != null) detail.add(label + ": " + f);
+            return this;
+        }
     }
 
     private final ClassFile cf;
@@ -130,7 +141,7 @@ public final class Verifier {
                     method(m);
                 } catch (Fail e) {
                     return new Result(Kind.VERIFY, cf.thisClass + "." + m.name + m.desc
-                            + " @" + e.bci + ": " + e.getMessage());
+                            + " @" + e.bci + ": " + e.getMessage(), e.detail);
                 }
                 methodsChecked++;
             }
@@ -582,20 +593,26 @@ public final class Verifier {
     /** frameIsAssignable, JVMS 4.10.1.2. */
     private void assignable(int pc, Frame from, Frame to, String what)
             throws Fail, Refusal, ClassFormatException {
+        // A merge that fails is two frames and a place, and printing one of
+        // the three is what every other tool does.
         if (from.sp != to.sp)
-            throw new Fail(pc, what + ": the operand stack has " + from.sp
-                    + " slots here and the declared frame has " + to.sp);
+            throw merge(pc, what + ": the operand stack has " + from.sp
+                    + " slots here and the declared frame has " + to.sp, from, to);
         for (int i = 0; i < from.locals.length && i < to.locals.length; i++)
             if (!h.isAssignable(from.locals[i], to.locals[i]))
-                throw new Fail(pc, what + ": local " + i + " is " + from.locals[i]
-                        + " here and the declared frame wants " + to.locals[i]);
+                throw merge(pc, what + ": local " + i + " is " + from.locals[i]
+                        + " here and the declared frame wants " + to.locals[i], from, to);
         for (int i = 0; i < from.sp; i++)
             if (!h.isAssignable(from.stack[i], to.stack[i]))
-                throw new Fail(pc, what + ": stack slot " + i + " is " + from.stack[i]
-                        + " here and the declared frame wants " + to.stack[i]);
+                throw merge(pc, what + ": stack slot " + i + " is " + from.stack[i]
+                        + " here and the declared frame wants " + to.stack[i], from, to);
         if (from.thisUninit && !to.thisUninit)
-            throw new Fail(pc, what + ": this is still uninitialized here and the declared"
-                    + " frame says it is not");
+            throw merge(pc, what + ": this is still uninitialized here and the declared"
+                    + " frame says it is not", from, to);
+    }
+
+    private static Fail merge(int pc, String msg, Frame from, Frame to) {
+        return new Fail(pc, msg).at("frame here", from).at("frame declared", to);
     }
 
     private void target(int pc, Frame f, int t) throws Fail, Refusal, ClassFormatException {
@@ -627,7 +644,8 @@ public final class Verifier {
                         + f.stack[f.sp - 1] + ", not the second half of a two word value");
             VType got = f.stack[f.sp - 2];
             if (!h.isAssignable(got, want))
-                throw new Fail(-1, "want a " + want + " on the stack and found " + got);
+                throw new Fail(-1, "want a " + want.describe() + " on the stack and found "
+                        + got.describe());
             f.sp -= 2;
             return got;
         }
@@ -637,7 +655,8 @@ public final class Verifier {
         VType got = f.stack[--f.sp];
         if (!h.isAssignable(got, want)) {
             f.sp++;
-            throw new Fail(-1, "want a " + want + " on the stack and found " + got);
+            throw new Fail(-1, "want a " + want.describe() + " on the stack and found "
+                        + got.describe());
         }
         return got;
     }
@@ -647,7 +666,7 @@ public final class Verifier {
         if (f.sp < 1) throw new Fail(-1, "operand stack underflow");
         VType t = f.stack[f.sp - 1];
         if (t == VType.TOP || t.isTwoWord())
-            throw new Fail(-1, "want a one word value on the stack and found " + t);
+            throw new Fail(-1, "want a one word value on the stack and found " + t.describe());
         f.sp--;
         return t;
     }
@@ -674,8 +693,8 @@ public final class Verifier {
             throws Fail, Refusal, ClassFormatException {
         VType got = local(f, i);
         if (!h.isAssignable(got, want))
-            throw new Fail(-1, "local " + i + " holds " + got + " and a " + want
-                    + " is wanted");
+            throw new Fail(-1, "local " + i + " holds " + got.describe() + " and a "
+                    + want.describe() + " is wanted");
         push(f, got);
     }
 
@@ -705,11 +724,23 @@ public final class Verifier {
 
     private boolean step(Op.Insn in, Frame f)
             throws Fail, Refusal, ClassFormatException {
+        Frame before = f.copy();
         try {
             return rule(in, f);
         } catch (Fail e) {
-            if (e.bci >= 0) throw e;
-            throw new Fail(in.pc, Op.NAME[in.op] + ": " + e.getMessage());
+            // The frame as the instruction found it, not as the rule left
+            // it: a rule that has already popped three values and then
+            // failed would otherwise print a frame nothing ever had.  This
+            // is the whole reason the project exists, so it is attached
+            // here, once, rather than at each of two hundred rules.
+            if (e.bci >= 0) {
+                if (e.detail.isEmpty()) e.at("frame here", before);
+                throw e;
+            }
+            Fail f2 = new Fail(in.pc, Op.NAME[in.op] + ": " + e.getMessage());
+            f2.detail.addAll(e.detail);
+            if (f2.detail.isEmpty()) f2.at("frame here", before);
+            throw f2;
         }
     }
 

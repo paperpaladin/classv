@@ -78,6 +78,16 @@ public final class VType {
         return kind.hashCode() * 31 + (name != null ? name.hashCode() : offset);
     }
 
+    /**
+     * The rendering for an error message.  Not toString, because that one
+     * has to match javap's StackMapTable dump word for word for the parse
+     * comparison, and javap writes uninitializedThis as "this", which in a
+     * sentence reads as the English word.
+     */
+    public String describe() {
+        return kind == Kind.UNINIT_THIS ? "uninitializedThis" : toString();
+    }
+
     /** The rendering javap uses in its StackMapTable dump, minus its quoting. */
     @Override
     public String toString() {

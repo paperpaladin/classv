@@ -503,6 +503,41 @@ f=$(printf '%s\n' "$out" | sed -n 's/^MUT_FAIL //p')
 pass=$((pass + p))
 fail=$((fail + f))
 
+# The error message is the point of the program, so the suite asserts the
+# frames are actually printed rather than trusting that the code that makes
+# them is reached.  A branch moved three bytes gives a frame that does not
+# match the one the table declares at the target, which is the case that has
+# two frames to print.
+echo
+echo "--- the frames under a failure"
+nframe=0
+nmerge=0
+# java.* classes cannot be defined by a user class loader, so the sources
+# are drawn from the rest: the JVM has to be able to answer about each one.
+for src in $(grep -v '/jdk/[a-z.]*/java/' "$work/corpus.txt" | awk 'NR % 23 == 1' | head -60); do
+  for recipe in branch:3 branch:-1; do
+	python3 "$here/mutate.py" "$recipe" "$src" "$work/fr.class" >/dev/null 2>&1 || continue
+	msg=$(java -cp "$root/build" classv.Main --cp "$work/jdk/java.base" --verify \
+		"$work/fr.class")
+	case $msg in
+	VERIFY*) ;;
+	*) continue ;;
+	esac
+	printf '%s' "$msg" | grep -q 'frame here:' && nframe=$((nframe + 1))
+	if printf '%s' "$msg" | grep -q 'frame declared:'; then
+		nmerge=$((nmerge + 1))
+		[ "$nmerge" -eq 1 ] && printf '%s\n' "$msg" | sed 's/^/      /'
+		jvm=$(probe_one "$work/fr.class" "$work/jdk/java.base" | cut -f1)
+		[ "$jvm" = VERIFY ] || bad "the JVM does not reject the frame mismatch fixture: $jvm"
+	fi
+  done
+done
+if [ "$nframe" -ge 5 ] && [ "$nmerge" -ge 1 ]; then
+	ok "$nframe rejections printed the frame, $nmerge of them printed both frames"
+else
+	bad "only $nframe rejections printed a frame and $nmerge printed both"
+fi
+
 # ------------------------------------- oracle 6: random corruption, no oracle
 #
 # There is no outside authority for this one and it does not need one: the

@@ -148,6 +148,7 @@ public final class Main {
                 return EXIT_OK;
             case VERIFY:
                 out.println("VERIFY " + r.message);
+                for (String d : r.detail) out.println("    " + d);
                 return EXIT_VERIFY;
             case FORMAT:
                 out.println("FORMAT " + cf.thisClass + ": " + r.message);
