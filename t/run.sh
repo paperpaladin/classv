@@ -43,9 +43,22 @@ else
 	jimage extract --include 'glob:/java.base/**' --dir "$work/jdk" "$MODULES" >/dev/null
 fi
 find "$work/jdk" -name '*.class' | sort > "$work/corpus.txt"
+# CLASSV_N trims the corpus, for the mutation runs in t/mutants.py: twenty
+# rebuilds of classv against the whole image would take an hour and the
+# question those runs ask ("does any assertion notice?") does not need it.
+if [ -n "${CLASSV_N:-}" ]; then
+	# Spread over the whole image, not the first N: the paths are sorted,
+	# so the first thousand are all java.lang and java.util and the
+	# mutation sweep, which cannot use a java.* class at all, was left
+	# with six sources.
+	total=$(wc -l < "$work/corpus.txt")
+	step=$((total / CLASSV_N + 1))
+	awk -v s="$step" 'NR % s == 1' "$work/corpus.txt" > "$work/corpus.trim"
+	mv "$work/corpus.trim" "$work/corpus.txt"
+fi
 n=$(wc -l < "$work/corpus.txt")
 echo "--- $n class files"
-[ "$n" -gt 1000 ] || { echo "corpus of $n is too small to mean anything"; exit 2; }
+[ "$n" -gt "${CLASSV_MIN:-1000}" ] || { echo "corpus of $n is too small to mean anything"; exit 2; }
 
 # ------------------------------------------------- oracle 1: javap, fact by fact
 out=$(python3 "$here/javap_cmp.py" "$CLASSV" "$work/corpus.txt" 300)
@@ -76,7 +89,7 @@ acc=$(awk -F'	' '$1=="ACCEPT"' "$work/jvm.txt" | wc -l)
 rej=$(awk -F'	' '$1=="VERIFY" || $1=="FORMAT"' "$work/jvm.txt" | wc -l)
 na=$(awk -F'	' '$1=="ORACLE_NA"' "$work/jvm.txt" | wc -l)
 echo "--- JVM verdicts over the corpus: $acc accept, $rej reject, $na no opinion"
-if [ "$acc" -gt 1000 ]; then
+if [ "$acc" -gt $((n / 2)) ]; then
 	ok "the JVM answers about $acc of $n corpus classes"
 else
 	bad "the JVM answered about only $acc classes; the oracle is not working"
@@ -492,7 +505,8 @@ grep -v '/jdk/[a-z.]*/java/' "$work/corpus.txt" | awk 'NR % 7 == 1' \
 	| head -"${MUT_N:-150}" > "$work/mutsrc.txt"
 msrc=$(wc -l < "$work/mutsrc.txt")
 echo "--- $msrc mutation sources"
-[ "$msrc" -ge 50 ] || { echo "only $msrc mutation sources; too few to mean anything"; exit 2; }
+[ "$msrc" -ge "${MUT_MIN:-50}" ] \
+	|| { echo "only $msrc mutation sources; too few to mean anything"; exit 2; }
 out=$(CLASSV_ROOTS="$ROOTS" python3 "$here/mutation_sweep.py" "$work/mutsrc.txt" \
 	"$work/mut" "java -cp $root/build classv.Main $CP" \
 	"java @$work/exports.args -cp $work/probe Probe")

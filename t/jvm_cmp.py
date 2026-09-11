@@ -49,13 +49,22 @@ def run_classv(classv_cmd, listfile):
     r = subprocess.run(classv_cmd.split() + ['--verify', '@' + listfile],
                        capture_output=True, text=True, errors='replace')
     out = {}
-    path = None
+    # classv prints a "== path" header only when it was given more than one
+    # file, so a list of one has no header and every verdict in it was being
+    # dropped.  Invisible against the whole image, where every recipe has
+    # hundreds of mutants; it cost two answers in a trimmed run and that is
+    # the only reason it was ever noticed.
+    paths = [q for q in open(listfile).read().split('\n') if q]
+    path = paths[0] if len(paths) == 1 else None
     for ln in r.stdout.split('\n'):
         if ln.startswith('== '):
             path = ln[3:]
-        elif ln[:2] in ('OK', 'VE', 'FO', 'RE') and ' ' in ln and path is not None:
+        elif ln[:2] in ('OK', 'VE', 'FO', 'RE', 'IN') and ' ' in ln and path is not None:
             word, _, rest = ln.partition(' ')
-            if word in ('OK', 'VERIFY', 'FORMAT', 'REFUSE'):
+            # INTERNAL is here so that a defect in classv is a failure with
+            # a name rather than a file nobody answered about.  Two mutants
+            # in a trimmed run were being counted as missing.
+            if word in ('OK', 'VERIFY', 'FORMAT', 'REFUSE', 'INTERNAL'):
                 out[path] = (word, rest)
     return out, r
 
@@ -69,6 +78,8 @@ class Tally:
         self.false_accept = []
         self.classv_refuse = {}
         self.refused_jvm = {}
+        self.internal = []
+        self.missing_paths = []
         self.oracle_na = {}
         self.jvm_other = 0
         self.missing = 0
@@ -87,6 +98,9 @@ class Tally:
         ck, cm = cv
         if jk == 'ORACLE_NA':
             self.oracle_na[first(jm)] = self.oracle_na.get(first(jm), 0) + 1
+            return
+        if ck == 'INTERNAL':
+            self.internal.append('%s: %s' % (path, cm[:200]))
             return
         if ck == 'REFUSE':
             self.classv_refuse[first(cm)] = self.classv_refuse.get(first(cm), 0) + 1
@@ -162,6 +176,10 @@ class Tally:
                                  % (path, j.group(2), c.group(2), cm[:150]))
 
     def report(self, label, accept_word='FAIL'):
+        for m in self.missing_paths[:5]:
+            print('FAIL no answer for %s' % m)
+        for m in self.internal[:5]:
+            print('FAIL classv reported an internal error on %s' % m)
         for m in self.false_accept[:10]:
             print('%s false accept %s' % (accept_word, m))
         for m in self.false_reject[:10]:
@@ -205,7 +223,8 @@ class Tally:
 
     @property
     def failures(self):
-        return len(self.false_accept) + len(self.false_reject) + len(self.bci_diff)
+        return (len(self.false_accept) + len(self.false_reject) + len(self.bci_diff)
+                + len(self.internal))
 
 
 # "com/sun/crypto/provider/SunJCE.<init>()V @6" -> the method and the bci.
@@ -240,6 +259,8 @@ def compare(listfile, mode, classv_cmd, probe_cmd, tally=None, roots=''):
         c = cv.get(p)
         if j is None or c is None:
             t.missing += 1
+            t.missing_paths.append('%s: %s' % (p, 'no JVM answer' if j is None
+                                               else 'no classv answer'))
             continue
         t.add(p, j, c)
     return t, jr, cr

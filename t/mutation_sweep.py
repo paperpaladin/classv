@@ -97,6 +97,8 @@ def main():
         total.false_accept += t.false_accept
         total.false_reject += t.false_reject
         total.missing += t.missing
+        total.internal += t.internal
+        total.missing_paths += t.missing_paths
         total.jvm_other += t.jvm_other
         total.bci_same += t.bci_same
         total.bci_target += t.bci_target
