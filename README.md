@@ -309,6 +309,30 @@ almost all of it is string concatenation moving from `StringBuilder` to an
 `invokedynamic` against `StringConcatFactory`: 691 instructions at 8 against
 643 at 11 and up. `-g:none` changes the Utf8 count and nothing else.
 
+### A JDK this one cannot read
+
+There is a second JDK on this machine, version 25, and its module image
+holds class file version 69: a format javac 21 cannot write and this JVM
+cannot load. `jimage` from 21 can still unpack it, so it is 7407 more
+files nobody here wrote.
+
+```
+--- 7407 class files, versions: 52: 1, 69: 7406
+--- second image: 0 agree accept, 3934 agree reject, 0 false accept,
+    0 false reject
+--- second image: the JVM had no opinion on 3473
+```
+
+The 3473 are `java.*` classes, which a user class loader is not allowed to
+define at all. The one file at version 52 is a generated
+`SystemModulesMap` placeholder, and both sides accept it.
+
+Every rejection here is the version, so what this corpus measures is
+narrow: that the parse gets far enough through a file from the future to
+find the version in it, and that the answer matches. It is not a test of
+the type checker, and the suite prints `SKIP` where there is no second
+image.
+
 ### Class files this JDK did not build
 
 `t/jars.py` unpacks every jar it can find under `$HOME/.cache`,

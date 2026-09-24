@@ -324,6 +324,9 @@ Ranked by how little of them we control:
       done: t/jars.py and oracle 4c. Also 640 class files of version 52 and
       65 from the same jars, which is real code this JDK did not build:
       637 accepted by both sides, 3 the JVM has no opinion on.
-- [ ] A second JDK's module image as corpus
+- [x] A second JDK's module image as corpus
       why: there is a JDK 25 image on this machine with class file version
       69 in it, which is a different shape from anything javac 21 emits.
+      done: 7407 files, 3934 answered about by both and rejected by both
+      for the version, 0 disagreements. A narrow result and the README
+      says which part of classv it exercises.

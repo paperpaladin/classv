@@ -436,6 +436,56 @@ for rel in 8 11 17 21; do
 	done
 done
 
+# ------------------- oracle 4b2: the module image of a JDK this one cannot read
+#
+# A second JDK on this machine has class file version 69 in it, which javac
+# 21 cannot write and this JVM cannot load.  Both sides should say so, and
+# the parse has to get far enough through a file from the future to find the
+# version in it.
+echo
+echo "--- oracle 4b2: a second JDK's module image"
+ALT=$(ls /run/host/usr/lib/jvm/*/lib/modules /usr/lib/jvm/*/lib/modules 2>/dev/null \
+	| while read -r m; do
+		r=$(readlink -f "$m")
+		[ "$r" = "$(readlink -f "$MODULES")" ] || echo "$r"
+	  done | sort -u | head -1)
+if [ -z "$ALT" ]; then
+	echo "SKIP no second module image on this machine"
+else
+	echo "--- $ALT"
+	if ! jimage extract --include 'glob:/java.base/**' --dir "$work/alt" "$ALT" \
+			>/dev/null 2>&1; then
+		echo "SKIP jimage cannot read $ALT"
+	else
+		find "$work/alt" -name '*.class' | sort > "$work/alt.txt"
+		an=$(wc -l < "$work/alt.txt")
+		echo "--- $an class files, versions: $(python3 - "$work/alt.txt" <<'PEOF'
+import struct, sys
+seen = {}
+for p in open(sys.argv[1]).read().split('\n'):
+    if not p:
+        continue
+    with open(p, 'rb') as f:
+        b = f.read(8)
+    if len(b) == 8:
+        v = struct.unpack('>H', b[6:8])[0]
+        seen[v] = seen.get(v, 0) + 1
+print(', '.join('%d: %d' % kv for kv in sorted(seen.items())))
+PEOF
+)"
+		[ "$an" -gt 1000 ] || { echo "only $an class files in $ALT"; exit 2; }
+		out=$(python3 "$here/jvm_cmp.py" "$work/alt.txt" define \
+			"java -cp $root/build classv.Main" \
+			"java -cp $work/probe Probe")
+		printf '%s\n' "$out" | grep -v '^JVM_' | sed "s/^--- the JVM vs classv/--- second image/"
+		p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
+		f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
+		[ -n "$p" ] || { echo "jvm_cmp.py produced no count for the second image"; exit 2; }
+		pass=$((pass + p))
+		fail=$((fail + f))
+	fi
+fi
+
 # ------------- oracle 4c: real class files from jars this JDK did not build
 #
 # Everything above came out of the javac on this machine.  An old jar is a
