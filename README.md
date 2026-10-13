@@ -182,8 +182,30 @@ Measured over `java.base` from this machine's JDK 21 module image:
 --- javap comparison: 7574 classes, 453680 pool operands, 604799 Utf8,
     94072 members, 62791 code bodies, 1874309 instructions, 10975 handlers,
     104155 stack map frames, 125930 verification types, 104155 frame offsets
-30296 passed, 0 failed
 ```
+
+That census is the javap comparison alone. The suite total covers it and
+everything after it:
+
+```
+--- JVM verdicts over the corpus: 7573 accept, 0 reject, 1 no opinion
+--- the JVM vs classv: 7573 agree accept, 0 agree reject, 0 false accept,
+    0 false reject; the JVM had no opinion on 1
+--- flag sweep: 106 agree accept, 104 agree reject (100 in the same
+    category), 0 false accept, 0 false reject
+--- random corruption: 118 agree accept, 507 agree reject (491 in the same
+    category), 1 false accept, 0 false reject
+--- isAssignable vs Class.isAssignableFrom: 43164 pairs on non-interface
+    targets, 27194 assignable, 15970 not, 0 refused
+106469 passed, 0 failed
+```
+
+Two of those lines are the ones to read. The corpus of real classes
+produces 7573 agreements and no rejections at all, which is what you
+would expect of a shipped module image and is therefore weak evidence
+that this verifier can say no. The corruption sweep is where it has to:
+507 rejections agreed with the JVM, 491 of them in the same category,
+and 1 false accept, which the suite fails above.
 
 `CLASSV_FULL=1 make test` runs the same comparison over all 27846 classes in
 the image rather than the 7574 of `java.base`.
