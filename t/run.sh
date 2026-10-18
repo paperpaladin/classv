@@ -629,6 +629,24 @@ f=$(printf '%s\n' "$out" | sed -n 's/^FUZZ_FAIL //p')
 pass=$((pass + p))
 fail=$((fail + f))
 
+# The mutation table, checked for rot rather than run.
+#
+# t/mutants.py was reachable from nothing at all: no Makefile target, named
+# once in a comment at the top of this file for a caller that did not exist,
+# and absent from the README and PLAN. So its twenty-two entries had never
+# been run, in a suite of some six hundred assertions nobody had watched
+# fail. The sweep itself is hours, which is why it is a separate target;
+# this asks the cheap half of its question, whether every pattern still
+# appears exactly once in the file it names, and goes red on a refactor.
+echo "--- the mutation table"
+if mout=$(python3 t/mutants.py --check 2>&1); then
+	pass=$((pass + 1)); echo "ok   $mout"
+else
+	fail=$((fail + 1))
+	echo "FAIL a mutation pattern no longer applies, so the table tests less than it says"
+	echo "$mout" | sed 's/^/     /'
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

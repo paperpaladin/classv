@@ -132,7 +132,43 @@ def run(work, name):
             first or (tail[-1] if tail else 'no output'))
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def check():
+    """Every entry's pattern still appears exactly once in the file it names.
+
+    The sweep asks this one mutant at a time, in the middle of a run that
+    recompiles and reruns the whole suite per mutant, so it is not in `make
+    test` and nothing asks it between sweeps. An entry whose pattern has been
+    refactored away is then neither killed nor surviving: it does nothing,
+    and the score is over a smaller table than it names. yamlc had five in
+    that state, one for over a month.
+
+    This asks it about all of them in well under a second.
+    """
+    src, bad = {}, []
+    for name, f, old_text, _new in MUTANTS:
+        if f not in src:
+            src[f] = open(os.path.join(ROOT, f)).read()
+        n = src[f].count(old_text)
+        if n != 1:
+            bad.append((name, f, n, old_text.strip()[:58]))
+    for name, f, n, snip in bad:
+        print("STALE %-22s %s: appears %d times, not once: %s"
+              % (name, f, n, snip))
+    if bad:
+        print("mutants: %d of %d entries no longer apply to the source"
+              % (len(bad), len(MUTANTS)))
+        return 1
+    print("mutants: %d entries, every pattern applies exactly once"
+          % len(MUTANTS))
+    return 0
+
+
 def main():
+    if '--check' in sys.argv:
+        return check()
     want = set(sys.argv[1:])
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     work = tempfile.mkdtemp(prefix='classv-mutants-')
@@ -140,7 +176,7 @@ def main():
                     ignore=shutil.ignore_patterns('.git', 'build', 'scratch', '__pycache__'))
     work = os.path.join(work, 'tree')
     originals = {f: open(os.path.join(work, f)).read() for f in (V, C, H, T, O)}
-    caught = survived = 0
+    caught = survived = stale = 0
     for name, f, old, new in MUTANTS:
         if want and name not in want:
             continue
@@ -149,8 +185,20 @@ def main():
                 fh.write(text)
         src = originals[f]
         if src.count(old) != 1:
+            # Counted, and fatal. This used to print and `continue`, so a
+            # pattern the source had moved past was neither caught nor
+            # survived: it left the tally silently, the summary line just
+            # read a smaller number, and the exit status stayed 0. yamlc had
+            # five entries in that state, one for over a month, and its
+            # published score of 73 killed out of 74 covered a table where
+            # five entries tested nothing.
+            #
+            # An ambiguous pattern is the same defect in the other
+            # direction: matching twice means the mutation lands somewhere
+            # the entry did not name.
             print('%-22s NOT APPLIED  the text appears %d times'
                   % (name, src.count(old)))
+            stale += 1
             continue
         with open(os.path.join(work, f), 'w') as fh:
             fh.write(src.replace(old, new))
@@ -160,9 +208,20 @@ def main():
             survived += 1
         else:
             caught += 1
-    print('--- mutants: %d caught, %d survived' % (caught, survived))
+    print('--- mutants: %d caught, %d survived, %d did not apply'
+          % (caught, survived, stale))
+    if stale:
+        print('--- a mutation whose pattern no longer matches tests nothing,'
+              ' so the table covers %d of %d entries' % (caught + survived,
+                                                         caught + survived + stale))
     shutil.rmtree(os.path.dirname(work), ignore_errors=True)
-    sys.exit(1 if survived else 0)
+    sys.exit(1 if (survived or stale) else 0)
 
 
-main()
+# sys.exit(main()), not a bare call. main() was invoked for its side effects
+# and its return value dropped, which was harmless while every exit went
+# through the sys.exit inside it, and silently wrong the moment --check
+# returned a status instead. A check that reports a defect and exits 0 is
+# worse than no check: it prints the finding into output nobody reads the
+# status of.
+sys.exit(main())
