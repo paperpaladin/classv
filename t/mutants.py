@@ -120,6 +120,14 @@ def run(work, name):
         return 'DID NOT BUILD', build.stderr.strip().split('\n')[0][:120]
     env = dict(os.environ)
     env.update(ENV)
+    # The staleness check in t/run.sh asks whether every pattern in this
+    # table still appears in the source it names. A mutation replaces one of
+    # those patterns, so during a sweep that check is certain to fail, the
+    # suite goes red for that reason alone, and a red suite is what this
+    # function reads as the mutant having been caught. Without this flag
+    # every mutant scores as killed and the sweep establishes only that the
+    # mutation was applied. extv ran two forty-minute sweeps that way.
+    env['CLASSV_MUTATION_RUN'] = '1'
     r = subprocess.run(['sh', 't/run.sh'], cwd=work, capture_output=True, text=True,
                        env=env)
     first = ''

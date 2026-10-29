@@ -638,8 +638,14 @@ fail=$((fail + f))
 # fail. The sweep itself is hours, which is why it is a separate target;
 # this asks the cheap half of its question, whether every pattern still
 # appears exactly once in the file it names, and goes red on a refactor.
+# Skipped, loudly and counted, while a mutant is in the tree: a mutation
+# replaces one of the patterns this verifies, so it would fail on every
+# mutant and make every mutant look killed.
 echo "--- the mutation table"
-if mout=$(python3 t/mutants.py --check 2>&1); then
+if [ -n "${CLASSV_MUTATION_RUN:-}" ]; then
+	pass=$((pass + 1))
+	echo "ok   skipped: a mutation is applied, so a stale pattern is expected"
+elif mout=$(python3 t/mutants.py --check 2>&1); then
 	pass=$((pass + 1)); echo "ok   $mout"
 else
 	fail=$((fail + 1))
