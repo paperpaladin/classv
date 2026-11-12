@@ -197,7 +197,7 @@ everything after it:
     category), 1 false accept, 0 false reject
 --- isAssignable vs Class.isAssignableFrom: 43164 pairs on non-interface
     targets, 27194 assignable, 15970 not, 0 refused
-106470 passed, 0 failed
+106475 passed, 0 failed
 ```
 
 Two of those lines are the ones to read. The corpus of real classes
