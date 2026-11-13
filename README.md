@@ -197,8 +197,42 @@ everything after it:
     category), 1 false accept, 0 false reject
 --- isAssignable vs Class.isAssignableFrom: 43164 pairs on non-interface
     targets, 27194 assignable, 15970 not, 0 refused
-106475 passed, 0 failed
+-- 9157 passes over corpora that came with this machine's packages, counted
+   apart from the total below
+97319 passed, 0 failed
 ```
+
+The total used to be 106475 and included that second line. Those 9157 checks
+read two corpora that belong to this machine's package manager rather than to
+this repository, the second JDK's module image and the jars, so they are
+counted beside the total now and not in it. Two things made that worth doing.
+
+The number moved from 106470 to 106475 with nothing here edited. A host
+LibreOffice update on 5 November put five more class files at major version
+49 into `libreoffice.jar`, and each one is another file classv refuses and the
+JVM accepts, so the jar corpus went from 4603 old class files to 4608 and the
+total went up by exactly five. The jar's mtime is its package build date, 21
+October, so only its ctime says when it arrived.
+
+And a machine without those two corpora passed quietly smaller. With the
+second module image hidden and no jar in the search path, the suite printed
+`97318 passed, 0 failed` and exited 0: green, 9157 checks short of the figure
+this README quoted, with three `SKIP` lines in the middle of the output and
+nothing counted as skipped. `zstdf` had the same shape over this machine's
+coredumps, and the repair is the same one. The last check of the run is the
+gate on it: fold either section's passes back into the total and it goes red
+on any machine that has those corpora, because the total then moves across
+them. Watched, not assumed: with the routing removed the run prints
+`106475 passed, 1 failed`.
+
+What that does not buy is a figure a clone reproduces anywhere. The corpus
+that carries the suite is `java.base` out of whatever JDK `java` resolves to,
+7574 classes from JDK 21 here, so another JDK gives another number and only a
+machine with no JDK at all gives none: `make test` there stops at `javac: No
+such file or directory`, and the harness on a built tree exits 2 saying
+`javap not found; it is the only oracle`. 97319 is the figure this machine
+reproduces run to run, twice measured, and it no longer moves when the host
+installs a package.
 
 Two of those lines are the ones to read. The corpus of real classes
 produces 7573 agreements and no rejections at all, which is what you
@@ -353,16 +387,18 @@ Every rejection here is the version, so what this corpus measures is
 narrow: that the parse gets far enough through a file from the future to
 find the version in it, and that the answer matches. It is not a test of
 the type checker, and the suite prints `SKIP` where there is no second
-image.
+image. This image belongs to the host's package manager, so its passes are
+counted apart from the suite total, like the jars' below.
 
 ### Class files this JDK did not build
 
 `t/jars.py` unpacks every jar it can find under `$HOME/.cache`,
 `/usr/share/java` and `/run/host/usr/share/java` and splits the class files
-by major version. On this machine that is 5243 files: 288 at version 48,
-4315 at 49, 637 at 52 and 3 at 65. The counts depend on what is installed,
-and the suite prints `SKIP` rather than inventing a corpus when there are no
-jars.
+by major version. On this machine that is 5248 files: 288 at version 48,
+4320 at 49, 637 at 52 and 3 at 65. The counts depend on what is installed,
+they move when the host updates a package, and the suite prints `SKIP`
+rather than inventing a corpus when there are no jars. Its passes are
+counted apart from the suite total for that reason.
 
 Below major version 50 there is no `StackMapTable`, so the JVM type-infers
 the frames and classv refuses by name. The refusal is the thing being
@@ -371,11 +407,15 @@ answer does: the suite requires the JVM to **accept** all of them, so a
 refusal that was quietly covering up a disagreement would fail.
 
 ```
---- 4603 old class files
---- jars, old: classv refused 4581
---- jars, old: of the refused, the JVM said ACCEPT 4581
+--- 4608 old class files
+--- jars, old: classv refused 4586
+--- jars, old: of the refused, the JVM said ACCEPT 4586
 --- jars, old: the JVM had no opinion on 22
 ```
+
+Those were 4603 and 4581 in late October. The five that arrived are the
+LibreOffice update described under "Measured", and they are the whole of the
+suite total's move from 106470 to 106475.
 
 The 22 are missing dependencies: `org/apache/commons/logging/Log` and
 similar, libraries that are not installed here.

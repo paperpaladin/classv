@@ -22,6 +22,10 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 pass=0
 fail=0
+# Passes over corpora that come from this machine's installed packages rather
+# than from this repository: the second JDK's module image and the jars. Kept
+# out of the total on purpose, see the comment after oracle 4c.
+mpass=0
 ok()  { pass=$((pass+1)); printf 'ok   %s\n' "$*"; }
 bad() { fail=$((fail+1)); printf 'FAIL %s\n' "$*"; }
 
@@ -444,6 +448,7 @@ done
 # version in it.
 echo
 echo "--- oracle 4b2: a second JDK's module image"
+beforem=$pass
 ALT=$(ls /run/host/usr/lib/jvm/*/lib/modules /usr/lib/jvm/*/lib/modules 2>/dev/null \
 	| while read -r m; do
 		r=$(readlink -f "$m")
@@ -481,7 +486,7 @@ PEOF
 		p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
 		f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
 		[ -n "$p" ] || { echo "jvm_cmp.py produced no count for the second image"; exit 2; }
-		pass=$((pass + p))
+		mpass=$((mpass + p))
 		fail=$((fail + f))
 	fi
 fi
@@ -525,9 +530,36 @@ else
 		p=$(printf '%s\n' "$out" | sed -n 's/^JVM_PASS //p')
 		f=$(printf '%s\n' "$out" | sed -n 's/^JVM_FAIL //p')
 		[ -n "$p" ] || { bad "jvm_cmp.py produced no count for the $part jar corpus"; continue; }
-		pass=$((pass + p))
+		mpass=$((mpass + p))
 		fail=$((fail + f))
 	done
+fi
+
+# The two sections above read corpora that belong to this machine's package
+# manager rather than to this repository, so their passes are counted apart
+# from the total and printed on their own line.
+#
+# They moved the suite's total from 106470 to 106475 with nothing here
+# edited: a host LibreOffice update on 5 November put 5 more class files at
+# major version 49 into libreoffice.jar, and each one is another file classv
+# refuses and the JVM accepts. Its mtime is the package build date, 21
+# October, so only the ctime says when it arrived.
+#
+# The worse half is what a machine without them does. With the second image
+# hidden and no jar in the search path, the suite printed 97318 passed, 0
+# failed and exited 0: green, 9157 checks short, three SKIP lines in the
+# middle of the output and nothing counted. zstdf had the same shape over
+# this machine's coredumps and the repair is the same.
+#
+# The check below is the gate on that split: fold either section back into
+# $pass and the total moves across them, and it goes red on any machine that
+# has them. A failure in either still counts into $fail and still fails the
+# run, because classv disagreeing with the JVM is a defect whatever built
+# the class file.
+if [ "$pass" -eq "$beforem" ]; then
+	ok "the $mpass checks over this machine's installed packages are none of them in the total"
+else
+	bad "the total moved from $beforem to $pass across the two machine corpora"
 fi
 
 # ------------------------------------------- oracle 5: the mutation sweep
@@ -654,5 +686,7 @@ else
 fi
 
 echo
+echo "-- $mpass passes over corpora that came with this machine's packages," \
+     "counted apart from the total below"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
